@@ -4,7 +4,7 @@
 ## skips to the end of the current rule or block and continues.
 
 import std/[strutils, unicode]
-import ../diagnostics, ./ast, ./lexer
+import ../runtime/diagnostics, ./ast, ./scanner
 
 type
   Parser = object

@@ -1,6 +1,6 @@
 ## Grammar front end: parse and check `.ldb` files.
 
-import ./diagnostics, ./grammar/[ast, parser, checks]
+import ./runtime/diagnostics, ./grammar/[ast, parser, checks]
 
 export diagnostics, ast, parser, checks
 

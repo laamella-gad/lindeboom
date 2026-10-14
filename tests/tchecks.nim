@@ -88,3 +88,8 @@ block checks_indentation:
     "'tabs' must be expand, strict or error")
   check(ind & "indentation { newline = NL; indent = INDENT; dedent = DEDENT; width = 4; } a : NL ; NL : '\\n' ;",
     "unknown indentation setting 'width'")
+
+block checks_lexer_recursion:
+  check("a : A ; A : '(' A? ')' ;", "lexer rule 'A' refers to itself")
+  check("a : A ; A : '(' B ')' ; fragment B : A | 'x' ;", "lexer rule 'A' refers to itself")
+  doAssert ok(header & "a : A B ; A : C C ; B : C ; fragment C : 'c' ;")

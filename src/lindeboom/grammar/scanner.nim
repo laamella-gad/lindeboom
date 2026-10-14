@@ -1,9 +1,9 @@
-## Lexer for `.ldb` grammar files.
+## Lexer for `.ldb` grammar files (not to be confused with the generated lexers).
 ##
 ## `options {`, `tokens {` and `indentation {` are single tokens, so these
 ## words can still name rules.
 
-import ../diagnostics
+import ../runtime/diagnostics
 
 type
   TokenKind* = enum

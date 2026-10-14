@@ -1,7 +1,7 @@
 ## Semantic checks on a parsed grammar.
 
 import std/[sets, strutils, tables, unicode]
-import ../diagnostics, ./ast
+import ../runtime/diagnostics, ./ast
 
 type
   Checker = object
@@ -189,6 +189,25 @@ proc checkRules(c: Checker, d: var Diagnostics) =
         c.checkCommands(r, a, d)
         for e in a.body.walk: c.checkLexerExpr(r, e, d)
 
+proc visitLexerRule(c: Checker, i: int, state: var seq[int], d: var Diagnostics) =
+  state[i] = 1
+  for a in c.g.rules[i].alts:
+    for e in a.body.walk:
+      if e.kind == ekTokenRef and c.isLexerRule(e.name):
+        let j = c.rules[e.name]
+        if state[j] == 1:
+          d.error(e.pos, "lexer rule '" & e.name & "' refers to itself")
+        elif state[j] == 0:
+          c.visitLexerRule(j, state, d)
+  state[i] = 2
+
+proc checkLexerRecursion(c: Checker, d: var Diagnostics) =
+  ## Lexer rules are inlined into one automaton, so they cannot recurse.
+  var state = newSeq[int](c.g.rules.len)  # 0 new, 1 on the path, 2 done
+  for i, r in c.g.rules:
+    if r.kind == rkLexer and state[i] == 0 and c.rules.getOrDefault(r.name, -1) == i:
+      c.visitLexerRule(i, state, d)
+
 # ---- empty matches ----
 
 func nullable(e: GExpr, kind: RuleKind, nullRules: HashSet[string]): bool =
@@ -301,6 +320,7 @@ proc checkGrammar*(g: Grammar, d: var Diagnostics) =
   c.checkDeclarations(d)
   c.checkOptions(d)
   c.checkRules(d)
+  c.checkLexerRecursion(d)
   c.checkEmpty(d)
   c.checkUnused(d)
   c.checkIndentation(d)

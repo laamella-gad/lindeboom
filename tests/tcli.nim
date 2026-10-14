@@ -22,6 +22,22 @@ block cli_check_errors:
   doAssert "1 error" in output, output
   removeFile(f)
 
+block cli_parse_tokens:
+  let f = getTempDir() / "lindeboom_tcli_input.py"
+  writeFile(f, "def f(x):\n    return x ** 2\n")
+  let (output, code) = run("parse --tokens " &
+    quoteShell(root / "examples" / "minipy" / "minipy.ldb") & " " & quoteShell(f))
+  doAssert code == 0, output
+  doAssert output.startsWith("1:1 'def' \"def\"\n1:5 ID \"f\"\n"), output
+  doAssert "2:14 '**' \"**\"\n" in output, output
+  doAssert output.endsWith("3:1 EOF \"\"\n"), output
+  writeFile(f, "x = $")
+  let (errOutput, errCode) = run("parse --tokens " &
+    quoteShell(root / "examples" / "minipy" / "minipy.ldb") & " " & quoteShell(f))
+  doAssert errCode == 1, errOutput
+  doAssert f & ":1:5: error: unexpected character '$'" in errOutput, errOutput
+  removeFile(f)
+
 block cli_usage:
   doAssert run("")[1] == 2
   doAssert run("check /no/such/file.ldb")[1] == 2

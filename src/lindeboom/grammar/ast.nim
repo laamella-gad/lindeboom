@@ -1,7 +1,7 @@
 ## Grammar AST produced by the `.ldb` front end.
 
 import std/unicode
-import ../diagnostics
+import ../runtime/diagnostics
 
 export SourcePos
 
