@@ -42,7 +42,7 @@ no special cases.
 
 ## Tasks
 
-- [ ] `indentation` block in the grammar front end
+- [x] `indentation` block in the grammar front end
 - [ ] Indent stack, bracket depth, `atLineStart`
 - [ ] Blank and comment-only lines dropped
 - [ ] Line joining inside brackets and after `\` continuation

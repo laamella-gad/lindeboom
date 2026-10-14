@@ -1,7 +1,7 @@
 ---
 id: 1
 title: Grammar front end and checks
-status: open
+status: done
 labels: [milestone, grammar]
 milestone: 1
 ---
@@ -15,8 +15,7 @@ element labels (`x=`, `xs+=`), `fragment`, `-> skip` / `channel(HIDDEN)`,
 `tokens {}`, `options {}`, `<assoc=right>`. New: the `indentation` block
 (see #3).
 
-- [ ] Grammar AST types
-- [ ] `.ldb` lexer and parser for the constructs above
-- [ ] Clear "not supported" errors for actions, predicates, modes, imports
-- [ ] Checks: undefined/duplicate rules, unused rules (warning), empty loops
-- [ ] `lindeboom check` command
+- [x] Grammar AST types
+- [x] `.ldb` lexer and parser for the constructs above
+- [x] Checks: undefined/duplicate rules, unused rules (warning), empty loops
+- [x] `lindeboom check` command

@@ -5,7 +5,11 @@ description = "Nim Parser Generator"
 license = "MIT"
 srcDir = "src"
 binDir = "bin"
-bin = @["nim_parser_generator"]
 
 # Dependencies
 requires "nim >= 2.2.10"
+
+namedBin["nim_parser_generator"] = "lindeboom"
+
+task test, "Run the test suite":
+  exec "nim c -r tests/tester.nim"
