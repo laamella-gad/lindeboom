@@ -1,0 +1,31 @@
+# Nim build output
+nimcache/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+*.out
+
+# Compiled binaries next to their sources (nim c without -o)
+/nim_parser_generator
+/src/nim_parser_generator
+/tests/*
+!/tests/*.*
+!/tests/*/
+
+# Nimble
+nimbledeps/
+nimble.develop
+nimble.paths
+
+# Test output
+testresults/
+outputGotten.txt
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+.idea
