@@ -1,7 +1,7 @@
 ---
 id: 19
 title: Typed parse tree, one node type per rule
-status: open
+status: wontfix
 labels: [codegen, usability]
 depends: [18]
 ---
@@ -81,3 +81,12 @@ walk (`build` in `deflower/src/deflower/flo_reader.nim`).
 - [ ] Tests: accessors on the wrong node type do not compile (`compiles`
       / `not compiles`), flags, repeated labels, alternatives, recovered
       trees; `docs/DESIGN.md`
+
+## Closing note
+
+Not done. An untyped tree walked with `case n.kind` is the usual Nim style
+(the compiler's `PNode`, `NimNode`, `JsonNode`), and Nim has no flow typing,
+so typed nodes would stay type-safe only up to each `case` and then need a
+checked conversion. The gain does not pay for one type and a set of
+accessors per alternative. Issue 18's `has` and `token` remain the way to
+find unlabelled tokens.
