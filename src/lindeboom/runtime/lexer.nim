@@ -49,9 +49,15 @@ type
 func text*[K](t: LexerToken[K], src: string): string =
   src[t.start ..< t.stop]
 
+func charLen(src: string, i: int): int =
+  ## Length of the UTF-8 character at byte offset `i`; 1 if it is invalid.
+  let n = min(src.runeLenAt(i), src.len - i)
+  if (n == 1 and ord(src[i]) >= 0x80) or src[i ..< i + n].validateUtf8() != -1: 1
+  else: n
+
 func describeChar(src: string, i: int): string =
   ## The character at byte offset `i`, quoted for an error message.
-  let n = min(src.runeLenAt(i), src.len - i)
+  let n = charLen(src, i)
   let ch = src[i ..< i + n]
   const hexChars = "0123456789ABCDEF"
   if (n == 1 and ord(src[i]) >= 0x80) or ch.validateUtf8() != -1:
@@ -112,14 +118,13 @@ proc filterIndentation*[K](c: IndentConfig, src: string, tokens: seq[LexerToken[
   ## `tokens` with newlines dropped inside brackets and on lines without
   ## other tokens, an indent token before the first token of a line indented
   ## further than the one before, and dedent tokens for each level it closes.
-  ## Ends with a newline and the remaining dedents before end of file. Stops
-  ## at the first error, without the end-of-file token.
+  ## Ends with a newline and the remaining dedents before end of file. After
+  ## an error, goes on as if the line were indented correctly.
   var stack = @[Indent()]
   var depth = 0          # open brackets
   var atLineStart = true # no token yet since the last newline
-  var failed = false
   var i = 0
-  while i < tokens.len and not failed:
+  while i < tokens.len:
     let tok = tokens[i]
     let k = int32(ord(tok.kind))
     if tok.hidden:
@@ -151,24 +156,23 @@ proc filterIndentation*[K](c: IndentConfig, src: string, tokens: seq[LexerToken[
             error = "unindent does not match any outer indentation level"
           elif c.tabs == tmStrict and ind.narrow != stack[^1].narrow:
             error = inconsistentTabs
-        if error.len > 0:
-          d.error(tok.pos, error)
-          failed = true
+        if error.len > 0: d.error(tok.pos, error)
         atLineStart = false
       if k in c.opens: inc depth
       elif k in c.closes and depth > 0: dec depth
-      if not failed: result.add tok
+      result.add tok
     inc i
 
 proc tokenize*[K](t: LexerTables, src: string, d: var Diagnostics):
     seq[LexerToken[K]] =
   ## Splits `src` into tokens by longest match, ending with an end-of-file
   ## token of kind `K(0)`, and applies the indentation filter if the grammar
-  ## has one. Stops at the first error, without the end-of-file token.
+  ## has one. A character that cannot start a token is an error and is
+  ## skipped; a run of them is one error.
   var i = 0
   var pos = SourcePos(line: 1, col: 1)
-  var failed = false
-  while i < src.len and not failed:
+  var failed = false # the last character could not start a token
+  while i < src.len:
     var state = 0'i32
     var j = i
     var kind = -1'i32
@@ -182,15 +186,18 @@ proc tokenize*[K](t: LexerTables, src: string, d: var Diagnostics):
         action = t.acceptAction[state]
         stop = j
     if stop < 0:
-      d.error(pos, describeChar(src, i))
+      if not failed: d.error(pos, describeChar(src, i))
       failed = true
+      stop = i + charLen(src, i)
+      pos.advancePos(src, i, stop)
+      i = stop
     else:
+      failed = false
       if action != taSkip:
         result.add LexerToken[K](kind: K(kind), start: i, stop: stop, pos: pos,
           hidden: action == taHidden)
       pos.advancePos(src, i, stop)
       i = stop
-  if not failed:
-    result.add LexerToken[K](kind: K(0), start: src.len, stop: src.len, pos: pos)
-    if t.indentation.enabled:
-      result = filterIndentation(t.indentation, src, result, d)
+  result.add LexerToken[K](kind: K(0), start: src.len, stop: src.len, pos: pos)
+  if t.indentation.enabled:
+    result = filterIndentation(t.indentation, src, result, d)

@@ -27,11 +27,11 @@ proc eval(n: Node): float =
     result = parseFloat(n.text)
   of nkToken:
     raiseAssert "tokens are evaluated by their parent"
+  of nkError:
+    raiseAssert "not in a tree without syntax errors"
 
 when isMainModule:
   let res = parseCalc(commandLineParams().join(" "), filename = "expression")
   for d in res.diagnostics: echo d
-  if res.tree != nil:
-    echo eval(res.tree)
-  else:
-    quit 1
+  if res.diagnostics.hasErrors: quit 1
+  echo eval(res.tree)

@@ -99,6 +99,18 @@ block indent_hidden_tokens:
   let got = filtered(src, "a:\n  #c\n  b #d\n#e\n")
   doAssert got == "a : NEWLINE #c INDENT b #d NEWLINE #e DEDENT EOF", got
 
+block indent_filter_goes_on_after_errors:
+  var (g, d) = loadGrammar(grammarWith("strict"), "test.ldb")
+  let v = buildVocabulary(g)
+  let t = buildLexer(g, v, d)
+  var di = Diagnostics(filename: "input")
+  let input = "a:\n    b\n  c\nd:\n    e\n  f\n"
+  var names: seq[string]
+  for tok in tokenize[int](t, input, di):
+    if v.tokens[tok.kind].name notin ["NL", "INDENT", "DEDENT", "EOF"]: names.add tok.text(input)
+  doAssert names == @["a", ":", "b", "c", "d", ":", "e", "f"], $names
+  doAssert di.items.len == 2, $di.items
+
 block indent_errors_in_grammar:
   var (g, d) = loadGrammar(grammarWith("expand").replace("'{' '}'", "'<' '>'"), "test.ldb")
   discard buildLexer(g, buildVocabulary(g), d)

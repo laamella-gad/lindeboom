@@ -18,7 +18,7 @@ Work is tracked in [`issues/`](../issues/README.md)
 - Good diagnostics, both for grammar problems and for syntax errors.
 
 **Non-goals (v1):** embedded actions/predicates, lexer modes, grammar imports,
-indirect left recursion, targets other than Nim, error recovery.
+indirect left recursion, targets other than Nim.
 
 ## 3. Grammar format
 

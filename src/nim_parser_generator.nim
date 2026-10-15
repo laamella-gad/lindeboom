@@ -133,12 +133,12 @@ proc parse(grammarFile, inputFile: string, o: Options): int =
     else:
       var d = Diagnostics(filename: inputFile)
       let tree = l.a.interpret(tokenize[int](l.tables, input, d), input, rule, d)
-      if d.report():
-        result = 1
-      elif o.tree:
+      let failed = d.report()
+      if o.tree:
         stdout.write tree.treeRepr(l.a.treeNames)
-      else:
+      elif not failed:
         echo inputFile, ": ok"
+      if failed: result = 1
 
 proc main(): int =
   var args: seq[string]

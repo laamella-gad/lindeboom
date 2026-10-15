@@ -8,6 +8,7 @@ export parser, json_lexer
 type
   NodeKind* = enum
     nkToken = "token"
+    nkError = "error"
     nkJson = "json"
     nkObject = "object"
     nkArray = "array"
@@ -40,62 +41,85 @@ proc rulePair(p: var Parser): Node
 proc ruleJson(p: var Parser): Node =
   ## `json`, line 4
   result = p.newNode(nkJson)
-  result.add(ruleValue(p))
-  p.match(result, tkEOF)
+  p.enter(0)
+  try:
+    result.add(ruleValue(p))
+    p.match(result, tkEOF)
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
 
 proc ruleValue(p: var Parser): Node =
   ## `value`, line 5
-  case p.peek
-  of tkLBrace:
-    result = p.newNode(nkObject)
-    p.match(result, tkLBrace)
-    if p.peek in {tkSTRING}:
-      result.add(rulePair(p), lbMembers)
-      while p.peek in {tkComma}:
-        p.match(result, tkComma)
+  p.enter(1)
+  try:
+    case p.peek
+    of tkLBrace:
+      result = p.newNode(nkObject)
+      p.match(result, tkLBrace)
+      if p.peek in {tkSTRING}:
         result.add(rulePair(p), lbMembers)
-    p.match(result, tkRBrace)
-  of tkLBracket:
-    result = p.newNode(nkArray)
-    p.match(result, tkLBracket)
-    if p.peek in {tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
-        tkNUMBER}:
-      result.add(ruleValue(p), lbElements)
-      while p.peek in {tkComma}:
-        p.match(result, tkComma)
+        while p.more(result, {tkComma}, {tkRBrace}):
+          p.match(result, tkComma)
+          result.add(rulePair(p), lbMembers)
+      p.match(result, tkRBrace)
+    of tkLBracket:
+      result = p.newNode(nkArray)
+      p.match(result, tkLBracket)
+      if p.peek in {tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
+          tkNUMBER}:
         result.add(ruleValue(p), lbElements)
-    p.match(result, tkRBracket)
-  of tkSTRING:
-    result = p.newNode(nkString)
-    p.match(result, tkSTRING)
-  of tkNUMBER:
-    result = p.newNode(nkNumber)
-    p.match(result, tkNUMBER)
-  of tkTrue:
-    result = p.newNode(nkTrue)
-    p.match(result, tkTrue)
-  of tkFalse:
-    result = p.newNode(nkFalse)
-    p.match(result, tkFalse)
-  of tkNull:
-    result = p.newNode(nkNull)
-    p.match(result, tkNull)
-  else:
-    p.fail({tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING, tkNUMBER})
+        while p.more(result, {tkComma}, {tkRBracket}):
+          p.match(result, tkComma)
+          result.add(ruleValue(p), lbElements)
+      p.match(result, tkRBracket)
+    of tkSTRING:
+      result = p.newNode(nkString)
+      p.match(result, tkSTRING)
+    of tkNUMBER:
+      result = p.newNode(nkNumber)
+      p.match(result, tkNUMBER)
+    of tkTrue:
+      result = p.newNode(nkTrue)
+      p.match(result, tkTrue)
+    of tkFalse:
+      result = p.newNode(nkFalse)
+      p.match(result, tkFalse)
+    of tkNull:
+      result = p.newNode(nkNull)
+      p.match(result, tkNull)
+    else:
+      p.fail({tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
+          tkNUMBER})
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
 
 proc rulePair(p: var Parser): Node =
   ## `pair`, line 13
   result = p.newNode(nkPair)
-  p.match(result, tkSTRING, lbKey)
-  p.match(result, tkColon)
-  result.add(ruleValue(p), lbValue)
+  p.enter(2)
+  try:
+    p.match(result, tkSTRING, lbKey)
+    p.match(result, tkColon)
+    result.add(ruleValue(p), lbValue)
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
+
+const followSets: array[3, set[TokenKind]] = [
+  {tkEOF}, # json
+  {tkEOF, tkComma, tkRBrace, tkRBracket}, # value
+  {tkEOF, tkComma, tkRBrace}] # pair
+
+proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
 proc parseWith(src, filename: string,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, rule)
+    result.diagnostics, follows, rule)
 
 proc parseJson*(src: string, filename = "input"): ParseResult[Node] =
   ## Parses `src` with rule `json`.

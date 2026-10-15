@@ -8,6 +8,7 @@ export parser, calc_lexer
 type
   NodeKind* = enum
     nkToken = "token"
+    nkError = "error"
     nkCalc = "calc"
     nkExpr = "expr"
     nkTerm = "term"
@@ -34,49 +35,77 @@ proc ruleFactor(p: var Parser): Node
 proc ruleCalc(p: var Parser): Node =
   ## `calc`, line 5
   result = p.newNode(nkCalc)
-  result.add(ruleExpr(p))
-  p.match(result, tkEOF)
+  p.enter(0)
+  try:
+    result.add(ruleExpr(p))
+    p.match(result, tkEOF)
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
 
 proc ruleExpr(p: var Parser): Node =
   ## `expr`, line 6
   result = p.newNode(nkExpr)
-  result.add(ruleTerm(p), lbOperands)
-  while p.peek in {tkPlus, tkMinus}:
-    p.matchSet(result, {tkPlus, tkMinus}, lbOps)
+  p.enter(1)
+  try:
     result.add(ruleTerm(p), lbOperands)
+    while p.more(result, {tkPlus, tkMinus}, {tkEOF, tkRParen}):
+      p.matchSet(result, {tkPlus, tkMinus}, lbOps)
+      result.add(ruleTerm(p), lbOperands)
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
 
 proc ruleTerm(p: var Parser): Node =
   ## `term`, line 7
   result = p.newNode(nkTerm)
-  result.add(ruleFactor(p), lbOperands)
-  while p.peek in {tkStar, tkSlash}:
-    p.matchSet(result, {tkStar, tkSlash}, lbOps)
+  p.enter(2)
+  try:
     result.add(ruleFactor(p), lbOperands)
+    while p.more(result, {tkStar, tkSlash}, {tkEOF, tkPlus, tkMinus, tkRParen}):
+      p.matchSet(result, {tkStar, tkSlash}, lbOps)
+      result.add(ruleFactor(p), lbOperands)
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
 
 proc ruleFactor(p: var Parser): Node =
   ## `factor`, line 8
-  case p.peek
-  of tkMinus:
-    result = p.newNode(nkNeg)
-    p.match(result, tkMinus)
-    result.add(ruleFactor(p))
-  of tkNUMBER:
-    result = p.newNode(nkNum)
-    p.match(result, tkNUMBER)
-  of tkLParen:
-    result = p.newNode(nkParen)
-    p.match(result, tkLParen)
-    result.add(ruleExpr(p))
-    p.match(result, tkRParen)
-  else:
-    p.fail({tkMinus, tkLParen, tkNUMBER})
+  p.enter(3)
+  try:
+    case p.peek
+    of tkMinus:
+      result = p.newNode(nkNeg)
+      p.match(result, tkMinus)
+      result.add(ruleFactor(p))
+    of tkNUMBER:
+      result = p.newNode(nkNum)
+      p.match(result, tkNUMBER)
+    of tkLParen:
+      result = p.newNode(nkParen)
+      p.match(result, tkLParen)
+      result.add(ruleExpr(p))
+      p.match(result, tkRParen)
+    else:
+      p.fail({tkMinus, tkLParen, tkNUMBER})
+  except SyntaxError:
+    p.recover(result)
+  p.leave()
+
+const followSets: array[4, set[TokenKind]] = [
+  {tkEOF}, # calc
+  {tkEOF, tkRParen}, # expr
+  {tkEOF, tkPlus, tkMinus, tkRParen}, # term
+  {tkEOF, tkPlus, tkMinus, tkStar, tkSlash, tkRParen}] # factor
+
+proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
 proc parseWith(src, filename: string,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, rule)
+    result.diagnostics, follows, rule)
 
 proc parseCalc*(src: string, filename = "input"): ParseResult[Node] =
   ## Parses `src` with rule `calc`.

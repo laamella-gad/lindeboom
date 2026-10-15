@@ -1,6 +1,8 @@
-## The generated modules checked in under `examples/` are golden files: they
-## must equal what the generator produces now. After a deliberate change to
-## the generated code, regenerate them with `lindeboom gen <grammar>`.
+## The generated modules checked in under `examples/` and the front end's own
+## `ldb_lexer.nim` and `ldb_parser.nim` are golden files: they must equal what
+## the generator produces now. After a deliberate change to the generated
+## code, regenerate them with `lindeboom gen <grammar>`. For the front end,
+## generate twice: the second run uses the front end the first one made.
 ##
 ## Also runs the example programs built on them.
 
@@ -11,18 +13,18 @@ let root = currentSourcePath().parentDir.parentDir
 let tmp = getTempDir() / "lindeboom_tgolden"
 createDir(tmp)
 
-proc checkGolden(name: string) =
-  let grammarFile = root / "examples" / name / name & ".ldb"
+proc checkGolden(grammarFile: string) =
   var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
   let v = buildVocabulary(g)
   let t = buildLexer(g, v, d)
   let a = analyze(g, v, d)
   doAssert not d.hasErrors, $d.items
-  let base = root / "examples" / name / moduleBase(g)
+  let name = grammarFile.extractFilename
+  let base = grammarFile.parentDir / moduleBase(g)
   let hint = ": out of date, run `lindeboom gen " & grammarFile.relativePath(root) & "`"
-  doAssert readFile(base & "_lexer.nim") == genLexerModule(v, t, name & ".ldb"),
+  doAssert readFile(base & "_lexer.nim") == genLexerModule(v, t, name),
     base & "_lexer.nim" & hint
-  doAssert readFile(base & "_parser.nim") == genParserModule(a, name & ".ldb"),
+  doAssert readFile(base & "_parser.nim") == genParserModule(a, name),
     base & "_parser.nim" & hint
 
 proc build(source: string): string =
@@ -32,10 +34,14 @@ proc build(source: string): string =
   doAssert code == 0, output
 
 block golden_calc:
-  checkGolden("calc")
+  checkGolden(root / "examples" / "calc" / "calc.ldb")
 
 block golden_json:
-  checkGolden("json")
+  checkGolden(root / "examples" / "json" / "json.ldb")
+
+block golden_front_end:
+  # the front end parses its own grammar and generates itself
+  checkGolden(root / "src" / "lindeboom" / "grammar" / "ldb.ldb")
 
 block example_calc:
   let exe = build(root / "examples" / "calc" / "calc.nim")

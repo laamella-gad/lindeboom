@@ -35,11 +35,12 @@ type
     nullable: Table[GExpr, bool]
     first: Table[GExpr, TokenSet]
     follow: Table[GExpr, TokenSet]
+    grammarFollow: Table[GExpr, TokenSet]  ## FOLLOW without the start-rule EOF
     visible: TokenSet                    ## tokens the parser can see, except EOF
     ruleNullable: seq[bool]
     ruleFirst, ruleFollow: seq[TokenSet]
-    kinds*: seq[string]                  ## node kind names; 0 is "token"
-    kindIdents*: seq[string]             ## `nkToken`, `nkIf`, ...
+    kinds*: seq[string]                  ## node kind names; 0 is "token", 1 "error"
+    kindIdents*: seq[string]             ## `nkToken`, `nkError`, `nkIf`, ...
     altKinds*: seq[seq[int]]             ## per rule and alternative: node kind
     labels*: seq[string]                 ## element labels; 0 is ""
     labelIdents*: seq[string]            ## `lbNone`, `lbCond`, ...
@@ -168,41 +169,46 @@ proc computeFirstSets(a: var Analysis) =
 
 # ---- FOLLOW ----
 
-proc computeFollow(a: var Analysis, e: GExpr, follow: TokenSet, changed: var bool) =
-  a.follow[e] = follow
+proc computeFollow(a: Analysis, e: GExpr, follow: TokenSet,
+    sets: var Table[GExpr, TokenSet], ruleFollow: var seq[TokenSet], changed: var bool) =
+  sets[e] = follow
   if not e.isTokenSet:
     case e.kind
     of ekSeq:
       var f = follow
       for i in countdown(e.items.high, 0):
         let x = e.items[i]
-        a.computeFollow(x, f, changed)
+        a.computeFollow(x, f, sets, ruleFollow, changed)
         if a.nullable[x]: f.incl a.first[x]
         else: f = a.first[x]
     of ekAlt:
-      for x in e.items: a.computeFollow(x, follow, changed)
+      for x in e.items: a.computeFollow(x, follow, sets, ruleFollow, changed)
     of ekOpt:
-      a.computeFollow(e.inner, follow, changed)
+      a.computeFollow(e.inner, follow, sets, ruleFollow, changed)
     of ekStar, ekPlus:
       var f = follow
       f.incl a.first[e.inner]
-      a.computeFollow(e.inner, f, changed)
+      a.computeFollow(e.inner, f, sets, ruleFollow, changed)
     of ekRuleRef:
       let r = a.ruleIndex[e.name]
-      if not (follow <= a.ruleFollow[r]):
-        a.ruleFollow[r].incl follow
+      if not (follow <= ruleFollow[r]):
+        ruleFollow[r].incl follow
         changed = true
     else:
       discard
 
-proc computeFollowSets(a: var Analysis) =
-  for i in a.parserRules: a.ruleFollow[i].incl 0
+proc computeFollowSets(a: Analysis, startEof: bool, sets: var Table[GExpr, TokenSet],
+    ruleFollow: var seq[TokenSet]) =
+  ## With `startEof`, every rule can be followed by EOF, as a start rule.
+  ruleFollow.setLen a.g.rules.len
+  if startEof:
+    for i in a.parserRules: ruleFollow[i].incl 0
   var changed = true
   while changed:
     changed = false
     for i in a.parserRules:
       for alt in a.g.rules[i].alts:
-        a.computeFollow(alt.body, a.ruleFollow[i], changed)
+        a.computeFollow(alt.body, ruleFollow[i], sets, ruleFollow, changed)
 
 func predict*(a: Analysis, e: GExpr): TokenSet =
   ## Tokens that select `e` at a decision: its FIRST set, plus its FOLLOW set
@@ -211,6 +217,24 @@ func predict*(a: Analysis, e: GExpr): TokenSet =
   if a.nullable[e]: result.incl a.follow[e]
 
 func first*(a: Analysis, e: GExpr): TokenSet = a.first[e]
+
+func follow*(a: Analysis, e: GExpr): TokenSet = a.follow[e]
+
+func grammarFollow*(a: Analysis, e: GExpr): TokenSet =
+  ## FOLLOW of `e` without the EOF that can follow any start rule; for error
+  ## messages.
+  a.grammarFollow[e]
+
+func expected*(a: Analysis, alts: seq[GExpr]): TokenSet =
+  ## Tokens to list when none of `alts` can start at the current token: as
+  ## `predict`, but with `grammarFollow`.
+  for e in alts:
+    result.incl a.first[e]
+    if a.nullable[e]: result.incl a.grammarFollow[e]
+
+func ruleFollow*(a: Analysis, r: int): TokenSet =
+  ## Tokens that can follow rule `r`, wherever it is used.
+  a.ruleFollow[r]
 
 func isAmbiguous*(a: Analysis, e: GExpr): bool =
   ## Whether the next token can both start and follow the `?`, `*` or `+`
@@ -435,8 +459,8 @@ func countLabels(a: Analysis, e: GExpr, inherited: string,
 proc assignNames(a: var Analysis, d: var Diagnostics) =
   var kindIndex: Table[string, int]
   var kindUsed, ruleUsed, labelUsed: HashSet[string]
-  a.kinds = @["token"]
-  a.kindIdents = @[uniqueIdent("nkToken", kindUsed)]
+  a.kinds = @["token", "error"]
+  a.kindIdents = @[uniqueIdent("nkToken", kindUsed), uniqueIdent("nkError", kindUsed)]
   a.labels = @[""]
   a.labelIdents = @[uniqueIdent("lbNone", labelUsed)]
   a.labelIsList = @[false]
@@ -476,9 +500,14 @@ proc analyze*(g: Grammar, v: Vocabulary, d: var Diagnostics): Analysis =
       result.parserRules.add i
   result.ruleNullable.setLen g.rules.len
   result.ruleFirst.setLen g.rules.len
-  result.ruleFollow.setLen g.rules.len
   result.computeFirstSets()
-  result.computeFollowSets()
+  var follow, grammarFollow: Table[GExpr, TokenSet]
+  var ruleFollow, ruleGrammarFollow: seq[TokenSet]
+  result.computeFollowSets(true, follow, ruleFollow)
+  result.computeFollowSets(false, grammarFollow, ruleGrammarFollow)
+  result.follow = follow
+  result.grammarFollow = grammarFollow
+  result.ruleFollow = ruleFollow
   result.assignNames(d)
   result.classify(d)
   let leftRecursive = result.checkLeftRecursion(d)

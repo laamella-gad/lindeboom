@@ -1,0 +1,47 @@
+// The grammar of `.ldb` grammar files. `ldb_lexer.nim` and `ldb_parser.nim`
+// are generated from it; regenerate them with
+// `lindeboom gen src/lindeboom/grammar/ldb.ldb`.
+//
+// Settings, lexer commands and `<assoc>` are parsed as plain identifiers and
+// checked when the tree is turned into a `Grammar`.
+grammar Ldb;
+
+file        : 'grammar' name=ID ';' topLevel* EOF ;
+topLevel    : options | tokens | indentation | rule ;
+
+options     : OPTIONS option* '}' ;
+option      : name=ID '=' value=(ID | INT | STRING) ';' ;
+tokens      : TOKENS tokenNames? '}' ;
+tokenNames  : ID (',' tokenNames?)? ;
+indentation : INDENTATION setting* '}' ;
+setting     : key=ID '=' (value=(ID | INT) | bracket (',' bracket)*) ';' ;
+bracket     : open=STRING close=STRING ;
+
+rule        : 'fragment'? name=ID ':' ruleAlt ('|' ruleAlt)* ';' ;
+ruleAlt     : assoc? element* ('#' altLabel=ID)? ('->' command (',' command)*)? ;
+assoc       : '<' key=ID '=' value=ID '>' ;
+command     : name=ID ('(' arg=ID ')')? ;
+element     : ID ('=' atom)? suffix?          # idElement
+            | primary suffix?                 # plainElement
+            ;
+atom        : ID | primary ;
+primary     : STRING ('..' STRING)?           # literal
+            | CHARSET                         # charSet
+            | '.'                             # wildcard
+            | '~' atom                        # not
+            | '(' subAlt ('|' subAlt)* ')'    # block
+            ;
+subAlt      : element* ;
+suffix      : op=('?' | '*' | '+') lazy='?'? ;
+
+ID            : [a-zA-Z] [a-zA-Z0-9_]* ;
+INT           : [0-9]+ ;
+STRING        : '\'' (~['\\\r\n] | '\\' ~[\r\n])* '\'' ;
+CHARSET       : '[' (~[\]\\\r\n] | '\\' ~[\r\n])* ']' ;
+OPTIONS       : 'options' SPACE* '{' ;
+TOKENS        : 'tokens' SPACE* '{' ;
+INDENTATION   : 'indentation' SPACE* '{' ;
+WS            : SPACE+ -> skip ;
+LINE_COMMENT  : '//' ~[\n]* -> skip ;
+BLOCK_COMMENT : '/*' .*? '*/' -> skip ;
+fragment SPACE : [ \t\r\n] ;

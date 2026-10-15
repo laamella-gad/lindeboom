@@ -22,14 +22,26 @@ proc problems*(grammarSrc: string): seq[string] =
     result.add m
 
 proc tree*(grammarSrc, input: string, rule = ""): string =
-  ## The parse tree of `input`, or the error as `line:col: message`.
+  ## The parse tree of `input`, or the errors as `line:col: message` lines.
   let (a, t, d) = analyzed(grammarSrc)
   doAssert not d.hasErrors, $d.items
   var r = a.parserRules[0]
   if rule.len > 0: r = a.ruleIndex[rule]
   var di = Diagnostics(filename: "input")
   let n = a.interpret(tokenize[int](t, input, di), input, r, di)
-  if n == nil:
-    for x in di.items: result.add $x.pos.line & ":" & $x.pos.col & ": " & x.msg
+  if di.hasErrors:
+    var errors: seq[string]
+    for x in di.items: errors.add $x.pos.line & ":" & $x.pos.col & ": " & x.msg
+    result = errors.join("\n")
   else:
     result = n.treeRepr(a.treeNames)
+
+proc recovered*(grammarSrc, input: string): string =
+  ## The parse tree of `input` followed by its errors as `line:col: message`
+  ## lines; the tree has error nodes where the parser recovered.
+  let (a, t, d) = analyzed(grammarSrc)
+  doAssert not d.hasErrors, $d.items
+  var di = Diagnostics(filename: "input")
+  let n = a.interpret(tokenize[int](t, input, di), input, a.parserRules[0], di)
+  result = n.treeRepr(a.treeNames)
+  for x in di.items: result.add $x.pos.line & ":" & $x.pos.col & ": " & x.msg & "\n"

@@ -3,7 +3,17 @@
 ##
 ## A tree has one node type, in the style of the Nim compiler's `PNode`:
 ## `kind` is the rule or alternative label that produced the node, `sons` are
-## its children in input order. Kind 0 is a token, label 0 means no label.
+## its children in input order. Kind 0 is a token, kind 1 an error node: the
+## tokens skipped where the parser recovered from a syntax error. Label 0
+## means no label.
+##
+## Error recovery works as in ANTLR. While the parser tries an alternative
+## speculatively, a syntax error makes it backtrack. Otherwise the error is
+## reported, and the rule it occurs in skips tokens until one that can follow
+## a rule being parsed, then returns what it has so far. A loop facing a
+## token that can neither start another iteration nor follow the loop skips
+## tokens until one that can. No error is reported until a token has been
+## matched since the last one.
 
 import std/[algorithm, strutils]
 import ./lexer
@@ -15,32 +25,46 @@ type
     data: string
 
   ParseNode*[K, L, T] = ref object
-    kind*: K            ## `K(0)` for a token
+    kind*: K            ## `K(0)` for a token, `K(1)` for an error node
     label*: L           ## element label in the parent, `L(0)` if none
     tok*: LexerToken[T] ## when `kind == K(0)`
     sons*: seq[ParseNode[K, L, T]]
     source: SourceText
 
   ParseResult*[N] = object
-    tree*: N            ## nil if there were errors
+    tree*: N            ## has error nodes if there were syntax errors
     diagnostics*: Diagnostics
 
   SyntaxError* = object of CatchableError
     pos*: SourcePos
+
+  FollowProc* = proc (rule, kind: int): bool {.closure.}
+    ## Whether token kind `kind` can follow rule number `rule`.
 
   ParserState*[K, L, T] = object
     ## Input of a generated parser: the visible tokens, ending with EOF.
     tokens*: seq[LexerToken[T]]
     i*: int
     source: SourceText
+    names: seq[string]      ## token names by kind
+    follows: FollowProc
+    errors: Diagnostics
     failAt: int             ## farthest token where a match failed
     failExpected: seq[int]  ## token kinds expected there
+    rules: seq[int]         ## the rules being parsed, innermost last
+    speculating: int        ## speculative parses in progress
+    recovering: bool        ## an error was reported and no token matched since
+    reportedAt: int         ## token of the last reported error
+    recoveredAt: int        ## token where the last recovery stopped
+    recoveredDepth: int     ## rules being parsed then
 
   Mark*[K, L, T] = object
     ## Parser position to return to when a speculative parse fails.
     i*: int
     node: ParseNode[K, L, T]
     sons: int
+    rules: int
+    recovering: bool
 
   TreeNames* = object
     ## Display names by ordinal, for `treeRepr`.
@@ -164,40 +188,112 @@ proc take*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     n.add(ParseNode[K, L, T](kind: K(0), tok: p.tokens[p.i], source: p.source),
       label)
     inc p.i
+  p.recovering = false
 
-proc fail*[K, L, T](p: var ParserState[K, L, T], expected: openArray[int]) {.noreturn.} =
-  ## Fails to match one of the `expected` token kinds at the current token.
-  ## The error that is reported is the one at the farthest token, which
-  ## after backtracking need not be the last one.
+proc expect[K, L, T, S](p: var ParserState[K, L, T], expected: S) =
+  ## Notes that one of the `expected` token kinds was needed at the current
+  ## token. The error that is reported is the one at the farthest token,
+  ## which after backtracking need not be the last one.
   if p.i > p.failAt:
     p.failAt = p.i
     p.failExpected.setLen 0
   if p.i == p.failAt:
-    for k in expected:
-      if k notin p.failExpected: p.failExpected.add k
+    for x in expected:
+      if ord(x) notin p.failExpected: p.failExpected.add ord(x)
+
+proc report[K, L, T](p: var ParserState[K, L, T]) =
+  ## Reports the farthest failure, unless the parser is still recovering
+  ## from an error there or before. Expected tokens are listed by kind, with
+  ## EOF last.
+  if not p.recovering and p.failAt > p.reportedAt:
+    var kinds = p.failExpected
+    kinds.sort()
+    var expected: seq[string]
+    for k in kinds:
+      if k != 0: expected.add p.names[k]
+    if 0 in kinds: expected.add p.names[0]
+    let found = p.tokens[p.failAt]
+    p.errors.error(found.pos, expectedMessage(expected, p.names[ord(found.kind)]))
+    p.reportedAt = p.failAt
+  p.recovering = true
+  p.failAt = -1
+  p.failExpected.setLen 0
+
+proc fail*[K, L, T, S](p: var ParserState[K, L, T], expected: S) {.noreturn.} =
+  ## Fails to match one of the `expected` token kinds at the current token.
+  ## Unless speculating, reports the error; the rule recovers from it.
+  p.expect(expected)
+  if p.speculating == 0: p.report()
   raise (ref SyntaxError)(msg: "syntax error", pos: p.tokens[p.i].pos)
 
-proc fail*[K, L, T](p: var ParserState[K, L, T], expected: set[T]) {.noreturn.} =
-  var kinds: seq[int]
-  for x in expected: kinds.add ord(x)
-  p.fail(kinds)
+proc canFollow[K, L, T](p: ParserState[K, L, T], kind: T): bool =
+  ## Whether `kind` is EOF or can follow one of the rules being parsed.
+  result = kind == T(0)
+  for r in p.rules:
+    if p.follows(r, ord(kind)): result = true
 
-proc syntaxErrorMessage*[K, L, T](p: ParserState[K, L, T], names: openArray[string]):
-    (SourcePos, string) =
-  ## Position and message of the farthest failure, with token names by kind.
-  ## Expected tokens are listed by kind, with EOF last.
-  var kinds = p.failExpected
-  kinds.sort()
-  var expected: seq[string]
-  for k in kinds:
-    if k != 0: expected.add names[k]
-  if 0 in kinds: expected.add names[0]
-  let found = p.tokens[p.failAt]
-  (found.pos, expectedMessage(expected, names[ord(found.kind)]))
+proc skip[K, L, T](p: var ParserState[K, L, T], err: ParseNode[K, L, T]) =
+  ## Adds the current token to the error node `err` and moves past it.
+  err.sons.add ParseNode[K, L, T](kind: K(0), tok: p.tokens[p.i], source: p.source)
+  inc p.i
 
-func mark*[K, L, T](p: ParserState[K, L, T], node: ParseNode[K, L, T]): Mark[K, L, T] =
-  ## The current position, and the sons of `node` so far.
-  Mark[K, L, T](i: p.i, node: node, sons: if node == nil: 0 else: node.sons.len)
+proc errorNode[K, L, T](p: ParserState[K, L, T]): ParseNode[K, L, T] =
+  p.newNode(K(1))
+
+proc enter*[K, L, T](p: var ParserState[K, L, T], rule: int) =
+  ## Starts parsing rule number `rule`.
+  p.rules.add rule
+
+proc leave*[K, L, T](p: var ParserState[K, L, T]) =
+  ## Ends the innermost rule.
+  discard p.rules.pop()
+
+proc recover*[K, L, T](p: var ParserState[K, L, T], n: var ParseNode[K, L, T]) =
+  ## After a syntax error in the innermost rule, whose node so far is `n`
+  ## (nil if there is none yet): passes the error on while speculating,
+  ## otherwise skips tokens until one that can follow a rule being parsed,
+  ## into an error node added to `n`.
+  if p.speculating > 0: raise (ref SyntaxError)(msg: "syntax error")
+  let err = p.errorNode
+  # recovering again where the last recovery stopped, in a rule at least as
+  # deep, would not make progress
+  if p.i == p.recoveredAt and p.rules.len >= p.recoveredDepth and p.peek != T(0):
+    p.skip(err)
+  while not p.canFollow(p.peek): p.skip(err)
+  p.recoveredAt = p.i
+  p.recoveredDepth = p.rules.len
+  if n == nil: n = err
+  else: n.add err
+
+proc more*[K, L, T, S](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
+    first, follow: S): bool =
+  ## Whether a loop whose body starts with `first` and that is followed by
+  ## `follow` goes on. Unless speculating, a token in neither is an error:
+  ## tokens are skipped into an error node added to `n` until one that is,
+  ## or that can follow a rule being parsed. EOF just ends the loop, so
+  ## `follow` need not have the EOF that can follow a start rule.
+  result = p.peek in first
+  if not result and p.peek notin follow and p.peek != T(0) and p.speculating == 0:
+    p.expect(first)
+    p.expect(follow)
+    p.report()
+    let err = p.errorNode
+    while p.peek notin first and p.peek notin follow and not p.canFollow(p.peek):
+      p.skip(err)
+    n.add err
+    result = p.peek in first
+
+proc mark*[K, L, T](p: var ParserState[K, L, T], node: ParseNode[K, L, T]):
+    Mark[K, L, T] =
+  ## Starts a speculative parse at the current position, with the sons of
+  ## `node` so far.
+  result = Mark[K, L, T](i: p.i, node: node, sons: if node == nil: 0 else: node.sons.len,
+    rules: p.rules.len, recovering: p.recovering)
+  inc p.speculating
+
+proc commit*[K, L, T](p: var ParserState[K, L, T], m: Mark[K, L, T]) =
+  ## Ends the speculative parse started at `m`, which succeeded.
+  dec p.speculating
 
 proc reset*[K, L, T](p: var ParserState[K, L, T], node: var ParseNode[K, L, T],
     m: Mark[K, L, T]) =
@@ -205,6 +301,9 @@ proc reset*[K, L, T](p: var ParserState[K, L, T], node: var ParseNode[K, L, T],
   p.i = m.i
   node = m.node
   if node != nil: node.sons.setLen m.sons
+  p.rules.setLen m.rules
+  p.recovering = m.recovering
+  dec p.speculating
 
 proc match*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     kind: T, label = L(0)) =
@@ -216,27 +315,38 @@ proc matchSet*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
   if p.peek notin kinds: p.fail(kinds)
   p.take(n, label)
 
-proc initParserState*[K, L, T](tokens: seq[LexerToken[T]], src: string):
-    ParserState[K, L, T] =
-  ## `tokens` from `tokenize`, hidden tokens are dropped.
+proc initParserState*[K, L, T](tokens: seq[LexerToken[T]], src: string,
+    names: seq[string], follows: FollowProc): ParserState[K, L, T] =
+  ## `tokens` from `tokenize`, hidden tokens are dropped. `names` are the
+  ## token names by kind, for messages.
   result.source = SourceText(data: src)
+  result.names = names
+  result.follows = follows
   result.failAt = -1
+  result.reportedAt = -1
+  result.recoveredAt = -1
   for t in tokens:
     if not t.hidden: result.tokens.add t
 
+proc finish*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
+    d: var Diagnostics) =
+  ## After the start rule, whose node is `n`: any input left is an error, and
+  ## is skipped into an error node. Adds the syntax errors to `d`.
+  if p.peek != T(0):
+    p.expect([0])
+    p.report()
+    let err = p.errorNode
+    while p.peek != T(0): p.skip(err)
+    n.add err
+  for x in p.errors.items: d.error(x.pos, x.msg)
+
 proc runParser*[K, L, T](tokens: seq[LexerToken[T]], src: string,
-    d: var Diagnostics,
+    d: var Diagnostics, follows: FollowProc,
     rule: proc (p: var ParserState[K, L, T]): ParseNode[K, L, T] {.nimcall.}):
     ParseNode[K, L, T] =
   ## Parses `tokens` with `rule`, which must be followed by the end of the
-  ## input. Returns nil after a lexical or syntax error, which is added to
-  ## `d`.
-  if not d.hasErrors:
-    var p = initParserState[K, L, T](tokens, src)
-    try:
-      result = rule(p)
-      if p.peek != T(0): p.fail({T(0)})
-    except SyntaxError:
-      let (pos, msg) = p.syntaxErrorMessage(enumNames(T))
-      d.error(pos, msg)
-      result = nil
+  ## input. Syntax errors are added to `d`; the tree has error nodes where
+  ## the parser recovered from them.
+  var p = initParserState[K, L, T](tokens, src, enumNames(T), follows)
+  result = rule(p)
+  p.finish(result, d)

@@ -71,6 +71,7 @@ proc genLexerModule*(v: Vocabulary, t: LexerTables, grammarFile: string,
   result.add ")\n\n"
   result.add """
 proc tokenize*(src: string, d: var Diagnostics): seq[Token] =
-  ## Splits `src` into tokens, ending with `tkEOF`. Stops at the first error.
+  ## Splits `src` into tokens, ending with `tkEOF`. Skips characters that
+  ## cannot start a token, reporting each run of them.
   tokenize[TokenKind](lexerTables, src, d)
 """

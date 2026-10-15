@@ -12,8 +12,7 @@ proc build*(grammarSrc: string): (Vocabulary, LexerTables, Diagnostics) =
 
 proc lex*(grammarSrc, input: string): seq[string] =
   ## Tokens of `input` as `NAME text`, without EOF; hidden tokens get a
-  ## trailing `(hidden)`. A lexical error is the last entry, as
-  ## `line:col: message`.
+  ## trailing `(hidden)`. Lexical errors follow, as `line:col: message`.
   let (v, t, _) = build(grammarSrc)
   var d = Diagnostics(filename: "input")
   for tok in tokenize[int](t, input, d):

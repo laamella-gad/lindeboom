@@ -337,7 +337,8 @@ block parsegen_reserved_labels:
 block parsegen_node_kinds:
   let (a, _, _) = analyzed(g("s : x # if | y # token ;\nx : ID ;\ny : t=INT ;\ntoken : ID ;"))
   # a label shares the node kind of a rule with the same name
-  doAssert a.kinds == @["token", "if", "token", "x", "y"], $a.kinds
-  doAssert a.kindIdents == @["nkToken", "nkIf", "nkToken2", "nkX", "nkY"], $a.kindIdents
+  doAssert a.kinds == @["token", "error", "if", "token", "x", "y"], $a.kinds
+  doAssert a.kindIdents == @["nkToken", "nkError", "nkIf", "nkToken2", "nkX", "nkY"],
+    $a.kindIdents
   doAssert a.labels == @["", "t"]
   doAssert a.labelIdents == @["lbNone", "lbT"]

@@ -33,18 +33,35 @@ func moduleBase*(g: Grammar): string =
 proc line(g: var Gen, indent: int, text: string) =
   g.s.add repeat("  ", indent) & text & "\n"
 
+proc wrappedPieces(g: var Gen, indent: int, head: string, pieces: seq[string]) =
+  ## `head` & pieces joined by " ", wrapped at 80 columns.
+  var cur = repeat("  ", indent) & head
+  for i, x in pieces:
+    if cur.len + x.len + 1 > 80 and i > 0:
+      g.s.add cur & "\n"
+      cur = repeat("  ", indent + 2) & x
+    else:
+      cur.add(if i > 0: " " & x else: x)
+  g.s.add cur & "\n"
+
 proc wrapped(g: var Gen, indent: int, head: string, items: seq[string], tail: string) =
   ## `head` & items joined by ", " & `tail`, wrapped at 80 columns.
-  var cur = repeat("  ", indent) & head
-  for i, x in items:
-    let item = x & (if i < items.high: "," else: tail)
-    if cur.len + item.len + 1 > 80 and i > 0:
-      g.s.add cur & "\n"
-      cur = repeat("  ", indent + 2) & item
-    else:
-      cur.add(if i > 0: " " & item else: item)
-  if items.len == 0: cur.add tail
-  g.s.add cur & "\n"
+  var pieces: seq[string]
+  for i, x in items: pieces.add x & (if i < items.high: "," else: tail)
+  if items.len == 0: pieces.add tail
+  g.wrappedPieces(indent, head, pieces)
+
+proc wrappedSets(g: var Gen, indent: int, head: string, sets: seq[seq[string]],
+    tail: string) =
+  ## `head` & the sets as `{A, B}` joined by ", " & `tail`, wrapped at 80
+  ## columns.
+  var pieces: seq[string]
+  for k, items in sets:
+    let after = if k < sets.high: "," else: tail
+    if items.len == 0: pieces.add "{}" & after
+    for i, x in items:
+      pieces.add (if i == 0: "{" else: "") & x & (if i < items.high: "," else: "}" & after)
+  g.wrappedPieces(indent, head, pieces)
 
 func idents(g: Gen, s: TokenSet): seq[string] =
   for k in s.sortedKinds: result.add g.a.v.tokens[k].ident
@@ -98,6 +115,7 @@ proc genCandidates(g: var Gen, alts: seq[GExpr], kinds: seq[string], cands: seq[
   if kinds[i].len > 0: g.line(ind, "result = p.newNode(" & kinds[i] & ")")
   g.genBody(alts[i], label, ind)
   if cands.len > 1:
+    g.line(ind, "p.commit(m)")
     g.line(indent, "except SyntaxError:")
     g.line(indent + 1, "p.reset(result, m)")
     g.genCandidates(alts, kinds, cands[1 .. ^1], label, indent + 1)
@@ -117,7 +135,12 @@ proc genDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string], label: string
     g.genCandidates(alts, kinds, cands, label, indent + 1)
   if all.len < g.a.v.tokens.len:
     g.line(indent, "else:")
-    g.wrapped(indent + 1, "p.fail({", g.idents(all), "})")
+    g.wrapped(indent + 1, "p.fail({", g.idents(g.a.expected(alts)), "})")
+
+proc genMore(g: var Gen, e: GExpr, head, tail: string, indent: int) =
+  ## `head p.more(...) tail`: whether loop `e` goes on.
+  g.wrappedSets(indent, head & "p.more(result, ", @[g.idents(g.a.first(e.inner)),
+    g.idents(g.a.grammarFollow(e))], ")" & tail)
 
 proc genIteration(g: var Gen, e: GExpr, label: string, indent: int) =
   ## One more iteration of `*` or `+` inside its `while`; when ambiguous,
@@ -126,6 +149,7 @@ proc genIteration(g: var Gen, e: GExpr, label: string, indent: int) =
     g.line(indent, "let m = p.mark(result)")
     g.line(indent, "try:")
     g.genBody(e.inner, label, indent + 1)
+    g.line(indent + 1, "p.commit(m)")
     g.line(indent, "except SyntaxError:")
     g.line(indent + 1, "p.reset(result, m)")
     g.line(indent + 1, "break")
@@ -148,22 +172,23 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
         g.line(indent + 1, "let m = p.mark(result)")
         g.line(indent + 1, "try:")
         g.genBody(e.inner, label, indent + 2)
+        g.line(indent + 2, "p.commit(m)")
         g.line(indent + 1, "except SyntaxError:")
         g.line(indent + 2, "p.reset(result, m)")
       else:
         g.genBody(e.inner, label, indent + 1)
     of ekStar:
-      g.wrapped(indent, "while p.peek in {", g.idents(g.a.first(e.inner)), "}:")
+      g.genMore(e, "while ", ":", indent)
       g.genIteration(e, label, indent + 1)
     of ekPlus:
       if g.a.isAmbiguous(e):
         g.genBody(e.inner, label, indent)
-        g.wrapped(indent, "while p.peek in {", g.idents(g.a.first(e.inner)), "}:")
+        g.genMore(e, "while ", ":", indent)
         g.genIteration(e, label, indent + 1)
       else:
         g.line(indent, "while true:")
         g.genBody(e.inner, label, indent + 1)
-        g.wrapped(indent + 1, "if p.peek notin {", g.idents(g.a.first(e.inner)), "}: break")
+        g.genMore(e, "if not ", ": break", indent + 1)
     of ekRuleRef:
       let r = g.a.ruleIndex[e.name]
       let prec =
@@ -185,7 +210,7 @@ proc genExtend(g: var Gen, i, k, indent: int) =
     labelArg(label) & ")")
   for x in items[1 .. ^1]: g.genExpr(x, "", indent)
 
-proc genLoop(g: var Gen, i: int) =
+proc genLoop(g: var Gen, i, indent: int) =
   ## The binary and suffix alternatives of precedence rule `i`.
   let r = g.a.g.rules[i]
   var loopAlts: seq[int]
@@ -194,36 +219,38 @@ proc genLoop(g: var Gen, i: int) =
     if g.a.isLoopAlt(i, k):
       loopAlts.add k
       sets.add g.a.continuation(alt.body)
-  g.line(1, "while true:")
-  g.line(2, "case p.peek")
+  g.line(indent, "while true:")
+  g.line(indent + 1, "case p.peek")
   for (cands, tokens) in groups(sets):
-    g.wrapped(2, "of ", g.idents(tokens), ":")
+    g.wrapped(indent + 1, "of ", g.idents(tokens), ":")
     if cands.len == 1:
       let k = loopAlts[cands[0]]
-      g.line(3, "if prec > " & $g.a.precedence(i, k) & ": break")
-      g.genExtend(i, k, 3)
+      g.line(indent + 2, "if prec > " & $g.a.precedence(i, k) & ": break")
+      g.genExtend(i, k, indent + 2)
     else:
       # all but the last are tried speculatively
-      g.line(3, "var done = false")
+      g.line(indent + 2, "var done = false")
       for j, c in cands:
         let k = loopAlts[c]
-        g.line(3, (if j > 0: "if not done and " else: "if ") & "prec <= " &
+        g.line(indent + 2, (if j > 0: "if not done and " else: "if ") & "prec <= " &
           $g.a.precedence(i, k) & ":")
         if j < cands.high:
-          g.line(4, "let m = p.mark(result)")
-          g.line(4, "try:")
-          g.genExtend(i, k, 5)
-          g.line(5, "done = true")
-          g.line(4, "except SyntaxError:")
-          g.line(5, "p.reset(result, m)")
+          g.line(indent + 3, "let m = p.mark(result)")
+          g.line(indent + 3, "try:")
+          g.genExtend(i, k, indent + 4)
+          g.line(indent + 4, "p.commit(m)")
+          g.line(indent + 4, "done = true")
+          g.line(indent + 3, "except SyntaxError:")
+          g.line(indent + 4, "p.reset(result, m)")
         else:
-          g.genExtend(i, k, 4)
-          g.line(4, "done = true")
-      g.line(3, "if not done: break")
-  g.line(2, "else:")
-  g.line(3, "break")
+          g.genExtend(i, k, indent + 3)
+          g.line(indent + 3, "done = true")
+      g.line(indent + 2, "if not done: break")
+  g.line(indent + 1, "else:")
+  g.line(indent + 2, "break")
 
-proc genRule(g: var Gen, i: int) =
+proc genRule(g: var Gen, i, number: int) =
+  ## Rule `i`, rule number `number` for recovery.
   let r = g.a.g.rules[i]
   let labelled = r.alts[0].label.len > 0
   let prec = g.a.isPrecRule[i]
@@ -238,12 +265,17 @@ proc genRule(g: var Gen, i: int) =
       heads.add alt.body
   if not labelled:
     g.line(1, "result = p.newNode(" & g.a.kindIdents[g.a.altKinds[i][0]] & ")")
+  g.line(1, "p.enter(" & $number & ")")
+  g.line(1, "try:")
   if heads.len == 1:
-    if labelled: g.line(1, "result = p.newNode(" & kinds[0] & ")")
-    g.genBody(heads[0], "", 1)
+    if labelled: g.line(2, "result = p.newNode(" & kinds[0] & ")")
+    g.genBody(heads[0], "", 2)
   else:
-    g.genDecision(heads, kinds, "", 1)
-  if prec: g.genLoop(i)
+    g.genDecision(heads, kinds, "", 2)
+  if prec: g.genLoop(i, 2)
+  g.line(1, "except SyntaxError:")
+  g.line(2, "p.recover(result)")
+  g.line(1, "p.leave()")
   g.s.add "\n"
 
 proc genParserModule*(a: Analysis, grammarFile: string,
@@ -276,15 +308,22 @@ proc genParserModule*(a: Analysis, grammarFile: string,
     g.line(0, "proc rule" & a.ruleIdents[i] & "(p: var Parser" &
       (if a.isPrecRule[i]: ", prec: int" else: "") & "): Node")
   g.s.add "\n"
-  for i in a.parserRules: g.genRule(i)
+  for number, i in a.parserRules: g.genRule(i, number)
 
+  g.s.add "const followSets: array[" & $a.parserRules.len & ", set[TokenKind]] = [\n"
+  for number, i in a.parserRules:
+    g.wrapped(1, "{", g.idents(a.ruleFollow(i)),
+      "}" & (if number < a.parserRules.high: "," else: "]") & " # " & a.g.rules[i].name)
   g.s.add """
+
+proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
+
 proc parseWith(src, filename: string,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, rule)
+    result.diagnostics, follows, rule)
 """
   for i in a.parserRules:
     let r = a.g.rules[i]

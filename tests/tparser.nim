@@ -77,21 +77,34 @@ block parser_char_set_ranges:
   doAssert g.rules[0].alts[0].body.items[0].ranges == @[
     (Rune('a'), Rune('z')), (Rune('A'), Rune('Z')), (Rune('_'), Rune('_'))]
 
-block parser_syntax_errors_recover:
+block parser_syntax_errors:
+  # the parser recovers, so each broken rule reports its own error
   let msgs = messages("""
 grammar G;
 a : b ) ;
 c : d
-e : f ;
-g : ( h ;
 """)
-  doAssert msgs == @[
-    "2:7: error: expected ';' but found ')'",
-    "4:1: error: expected ';' but found 'e'",
-    "5:9: error: expected ')' but found ';'"], $msgs
+  doAssert msgs == @["2:7: error: expected ';', '|', '#', '->', '(', '.', '~', ID, " &
+    "STRING or CHARSET but found ')'", "4:1: error: expected ';' but found end of input"], $msgs
+  doAssert "a : 'x' ;".hasMessage("1:1: error: expected 'grammar' but found ID")
+  doAssert "grammar G; a : ('x' # l) ;".hasMessage(
+    "1:21: error: expected '|', '(', ')', '.', '~', ID, STRING or CHARSET but found '#'")
+  doAssert "grammar G; A : 'abc ;".hasMessage("1:16: error: unexpected character '\\''")
 
-block parser_missing_header:
-  doAssert "a : 'x' ;".hasMessage("expected 'grammar Name;' at the start of the file")
+block parser_identifier_checks:
+  doAssert "grammar G; A : 'x' -> channel ;".hasMessage(
+    "lexer command 'channel' needs an argument, as in 'channel(NAME)'")
+  doAssert "grammar G; A : 'x' -> skip(X) ;".hasMessage("lexer command 'skip' takes no argument")
+  doAssert "grammar G; A : 'x' -> more ;".hasMessage("unknown lexer command 'more'")
+  doAssert "grammar G; a : <assok=left> 'x' ;".hasMessage("expected 'assoc' but found 'assok'")
+  doAssert "grammar G; a : <assoc=up> 'x' ;".hasMessage("expected 'left' or 'right' but found 'up'")
+  let ind = "grammar G; tokens { I, D } indentation { newline = '(' ')'; brackets = NL; " &
+    "dedent = D; dedent = D; } a : NL I D '(' ; NL : '\\n' ;"
+  doAssert ind.hasMessage("1:42: error: indentation setting 'newline' takes a name")
+  doAssert ind.hasMessage("'brackets' takes pairs of literals, as in '(' ')'")
+  doAssert ind.hasMessage("duplicate indentation setting 'dedent'")
+  doAssert "grammar G; indentation { } indentation { } a : 'x' ;".hasMessage(
+    "1:28: error: duplicate 'indentation' block")
 
 block parser_bad_escapes:
   doAssert "grammar G; A : '\\q' ;".hasMessage("invalid escape sequence '\\q'")

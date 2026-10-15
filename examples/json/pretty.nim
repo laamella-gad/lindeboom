@@ -71,13 +71,15 @@ proc pretty(n: Node, indent: int, s: var string) =
     pretty(n[0], indent, s)
   of nkPair, nkToken:
     raiseAssert "handled by the parent"
+  of nkError:
+    raiseAssert "not in a tree without syntax errors"
 
 when isMainModule:
   let filename = if paramCount() > 0: paramStr(1) else: "stdin"
   let src = if paramCount() > 0: readFile(filename) else: stdin.readAll()
   let res = parseJson(src, filename)
   for d in res.diagnostics: stderr.writeLine d
-  if res.tree == nil: quit 1
+  if res.diagnostics.hasErrors: quit 1
   var s = ""
   pretty(res.tree, 0, s)
   echo s

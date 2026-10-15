@@ -150,8 +150,11 @@ block lex_empty_input:
 block lex_errors:
   const g = "grammar G; a : (ID | STR)* ; ID : [a-z]+ ; STR : '\"' ~[\"]* '\"' ; WS : ' ' -> skip ;"
   doAssert lex(g, "ab $") == @["ID ab", "1:4: unexpected character '$'"]
-  doAssert lex(g, "ab \"cd") == @["ID ab", "1:4: unexpected character '\"'"]
-  doAssert lex(g, "a\tb") == @["ID a", "1:2: unexpected character '\\t'"]
-  doAssert lex(g, "a \xFFb") == @["ID a", "1:3: invalid UTF-8 byte 0xFF"]
+  doAssert lex(g, "ab \"cd") == @["ID ab", "ID cd", "1:4: unexpected character '\"'"]
+  doAssert lex(g, "a\tb") == @["ID a", "ID b", "1:2: unexpected character '\\t'"]
+  doAssert lex(g, "a \xFFb") == @["ID a", "ID b", "1:3: invalid UTF-8 byte 0xFF"]
   doAssert lex(g, "a \xC3") == @["ID a", "1:3: invalid UTF-8 byte 0xC3"]
   doAssert lex(g, "a 😀") == @["ID a", "1:3: unexpected character '😀'"]
+  # lexing goes on after an error; a run of bad characters is one error
+  doAssert lex(g, "a $%& b $ c") == @["ID a", "ID b", "ID c",
+    "1:3: unexpected character '$'", "1:9: unexpected character '$'"]

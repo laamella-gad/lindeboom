@@ -63,6 +63,11 @@ block cli_parse_tree:
   doAssert errCode == 1, errOutput
   doAssert f & ":1:4: error: expected '-', '(' or NUMBER but found end of input" in errOutput,
     errOutput
+  # with errors, the tree is still printed, with error nodes
+  let (treeOutput, treeCode) = run("parse --tree " & calc & " " & quoteShell(f))
+  doAssert treeCode == 1, treeOutput
+  doAssert "└── operands: error\n" in treeOutput, treeOutput
+  doAssert f & ":1:4: error: expected" in treeOutput, treeOutput
 
 block cli_parse_rule:
   let f = tmp / "input.txt"

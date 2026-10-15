@@ -2,7 +2,7 @@
 ## generated, and both must give the same result.
 
 import std/[assertions, os, random, strutils]
-import lindeboom/[grammar, lexgen]
+import lindeboom/[grammar, lexgen, parsegen]
 import ./codegenhelpers
 
 let tmp = getTempDir() / "lindeboom_tfuzz"
@@ -23,7 +23,10 @@ let seeds = [
   Case(grammarFile: root / "examples" / "minipy" / "minipy.ldb", inputs: @[
     "x = f(1); g(x, -a ** 2 + b[1] * c(d, e))\nreturn x\npass; pass\n",
     "def f(n):\n    if n < 2:\n        return 1\n    else:\n        while n: n = n - 1\n" &
-      "    return f(\n  n)\n"])]
+      "    return f(\n  n)\n"]),
+  Case(grammarFile: root / "src" / "lindeboom" / "grammar" / "ldb.ldb", inputs: @[
+    readFile(root / "tests" / "grammars" / "features.ldb"),
+    readFile(root / "examples" / "minipy" / "minipy.ldb")])]
 
 proc pieces(t: LexerTables, inputs: seq[string]): seq[string] =
   ## The text of every token in `inputs`.
@@ -66,5 +69,21 @@ block fuzz_parsers_never_crash_and_agree:
       let expected = interpreted(a, t, input)
       doAssert got[i] == expected, c.grammarFile & " " & input.escape & ":\n" & got[i] &
         "\nexpected:\n" & expected
+
+block fuzz_front_end_never_crashes:
+  # mutated grammars go through every stage that accepts them
+  var r = initRand(20261016)
+  let grammars = [readFile(root / "tests" / "grammars" / "features.ldb"),
+    readFile(root / "examples" / "minipy" / "minipy.ldb"),
+    readFile(root / "src" / "lindeboom" / "grammar" / "ldb.ldb")]
+  for _ in 0 ..< 1000:
+    var (g, d) = loadGrammar(r.mutant(r.sample(grammars)), "fuzz.ldb")
+    if not d.hasErrors:
+      let v = buildVocabulary(g)
+      let t = buildLexer(g, v, d)
+      let a = analyze(g, v, d)
+      if not d.hasErrors:
+        discard genLexerModule(v, t, "fuzz.ldb")
+        discard genParserModule(a, "fuzz.ldb")
 
 removeDir(tmp)
