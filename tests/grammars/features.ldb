@@ -6,7 +6,7 @@ item  : 'let' name=ID '=' value=expr ';'                 # let
       | 'list' '(' (xs=expr (',' xs=expr)*)? ')' ';'   # list
       | 'type' type=ID ('?' | '!')? ';'                  # typeDecl
       | 'raw' (~';')+ ';'                                # raw
-      | 'any' . ';'                                      # any
+      | 'any' label=. ';'                                # any
       | 'maybe' maybe ';'                                # opt
       | 'calc' calc ';'                                  # calcItem
       | 'sum' sum ';'                                    # sumItem

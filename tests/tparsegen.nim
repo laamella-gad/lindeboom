@@ -410,6 +410,14 @@ block parsegen_left_recursion:
 
 block parsegen_reserved_labels:
   expectProblem("s : text=ID ;", "label 'text' clashes with the parse tree API")
+  expectProblem("s : edge=ID ;", "label 'edge' clashes with the parse tree API")
+  # `label` is free
+  doAssert problems(g("s : label=ID ':' ;")).len == 0
+  expectTree("s : label=ID ':' ;", "x :", """
+    s
+    ├── label: ID "x"
+    └── ':'
+    """)
 
 block parsegen_node_kinds:
   let (a, _, _) = analyzed(g("s : x # if | y # token ;\nx : ID ;\ny : t=INT ;\ntoken : ID ;"))

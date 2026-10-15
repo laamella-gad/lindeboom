@@ -50,7 +50,7 @@ type
     shapes*: seq[seq[AltShape]]          ## per precedence rule and alternative
     operandPrec*: Table[GExpr, int]      ## trailing self-reference -> precedence
 
-const reservedLabels = ["kind", "label", "tok", "sons", "len", "text", "pos",
+const reservedLabels = ["kind", "edge", "tok", "sons", "len", "text", "pos",
   "items", "treeRepr"]
 
 func hash(e: GExpr): Hash = hash(cast[pointer](e))

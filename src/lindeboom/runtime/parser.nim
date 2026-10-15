@@ -4,8 +4,9 @@
 ## A tree has one node type, in the style of the Nim compiler's `PNode`:
 ## `kind` is the rule or alternative label that produced the node, `sons` are
 ## its children in input order. Kind 0 is a token, kind 1 an error node: the
-## tokens skipped where the parser recovered from a syntax error. Label 0
-## means no label.
+## tokens skipped where the parser recovered from a syntax error. `edge` is
+## the element label of a node in its parent; label 0 means no label. (It is
+## not called `label`, which is a common element label in grammars.)
 ##
 ## Error recovery works as in ANTLR. While the parser tries an alternative
 ## speculatively, a syntax error makes it backtrack. Otherwise the error is
@@ -26,7 +27,7 @@ type
 
   ParseNode*[K, L, T] = ref object
     kind*: K            ## `K(0)` for a token, `K(1)` for an error node
-    label*: L           ## element label in the parent, `L(0)` if none
+    edge*: L            ## element label in the parent, `L(0)` if none
     tok*: LexerToken[T] ## when `kind == K(0)`
     sons*: seq[ParseNode[K, L, T]]
     source: SourceText
@@ -83,12 +84,12 @@ iterator items*[K, L, T](n: ParseNode[K, L, T]): ParseNode[K, L, T] =
 func son*[K, L, T](n: ParseNode[K, L, T], label: L): ParseNode[K, L, T] =
   ## The first son with `label`, nil if there is none.
   for x in n.sons:
-    if x.label == label: return x
+    if x.edge == label: return x
 
 func sonsWith*[K, L, T](n: ParseNode[K, L, T], label: L): seq[ParseNode[K, L, T]] =
   ## All sons with `label`.
   for x in n.sons:
-    if x.label == label: result.add x
+    if x.edge == label: result.add x
 
 func firstToken[K, L, T](n: ParseNode[K, L, T]): ParseNode[K, L, T] =
   if n.kind == K(0):
@@ -136,7 +137,7 @@ proc addTree[K, L, T](s: var string, n: ParseNode[K, L, T], names: TreeNames,
   for i, x in n.sons:
     let last = i == n.sons.high
     s.add prefix & (if last: "└── " else: "├── ")
-    if ord(x.label) != 0: s.add names.labels[ord(x.label)] & ": "
+    if ord(x.edge) != 0: s.add names.labels[ord(x.edge)] & ": "
     s.addTree(x, names, prefix & (if last: "    " else: "│   "))
 
 proc treeRepr*[K, L, T](n: ParseNode[K, L, T], names: TreeNames): string =
@@ -179,7 +180,7 @@ proc newNode*[K, L, T](p: ParserState[K, L, T], kind: K): ParseNode[K, L, T] =
   ParseNode[K, L, T](kind: kind, source: p.source)
 
 proc add*[K, L, T](n, son: ParseNode[K, L, T], label = L(0)) =
-  son.label = label
+  son.edge = label
   n.sons.add son
 
 proc wrap*[K, L, T](p: ParserState[K, L, T], left: ParseNode[K, L, T], kind: K,
