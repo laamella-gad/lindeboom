@@ -1,0 +1,6 @@
+deflower x.prg
+$c000 byte byte
+$c000 byte foo bar
+$c000 word[] x
+$c000 @ x
+$c000 code (byte

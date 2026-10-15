@@ -1,0 +1,35 @@
+// Deflower's .flo format (/home/danny/IdeaProjects/deflower, its README.md,
+// "The .flo format"): one statement per line. A first try at
+// writing it for lindeboom; deflower issue 0126 plans to generate its .flo
+// reader from it. bad.flo shows the syntax errors issues 13 and 14 are about:
+// `lindeboom parse examples/flo/flo.ldb examples/flo/bad.flo`.
+grammar Flo;
+
+file        : statement* EOF ;
+statement   : COMMENT? NL                                    # blank
+            | 'deflower' file=ID NL                          # deflower
+            | 'include' file=ID NL                           # include
+            | '}' NL                                         # endBlock
+            | annotation NL                                  # line
+            ;
+annotation  : at=place virtual='virtual'? banked='banked'? selfmod='selfmod'?
+              type=dataType? name=ID? parameters? noreturn='noreturn'?
+              ('export' exportFile=ID)? open='{'? ;
+place       : start=number ('-' end=number)? ;
+number      : INT | HEX ;
+dataType    : typeName ('[' size? ']')? ;
+typeName    : 'screencode' | 'ascii' | 'byte' | 'word' | 'long' | 'dword'
+            | 'addr' | 'rta' | 'sbyte' | 'sword' | 'slong' | 'sdword' | 'code' ;
+size        : 'until' terminator=number                      # until
+            | 'lengthbyte'                                   # lengthByte
+            | number (op=('*' | '+') number)*                # count
+            ;
+parameters  : '(' parameter (',' parameter)* ')' ;
+parameter   : dataType name=ID? ;
+
+HEX     : '$' [0-9a-fA-F]+ ;
+INT     : [0-9]+ ;
+ID      : [A-Za-z0-9._?]+ ;
+COMMENT : [;#] ~[\r\n]* ;
+NL      : [\r\n]+ ;
+WS      : [ \t]+ -> skip ;
