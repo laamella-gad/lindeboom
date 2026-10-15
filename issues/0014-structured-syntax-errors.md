@@ -32,16 +32,18 @@ Want:
 A user's formatter maps the token kinds to its own names, e.g. `tkNL` to `the
 end of the line`, and words the message as it likes.
 
-## To decide
+## Decided
 
-- **The hook's shape.** A proc parameter of `parseX` (`formatter: proc (e:
-  SyntaxErrorInfo): string`), a field on the parser state, or no hook: the
-  diagnostics keep the data and the user formats them afterwards.
-- **What the data holds.** Whether the rule stack (not only the innermost
-  rule) and the kind of failure (mismatch, missing token, no viable
-  alternative) are part of it, as ANTLR's exceptions tell them apart.
-- **Lexer errors.** Whether `unexpected character '@'` goes through the same
-  hook, with the character as data.
+- **The hook's shape:** each diagnostic keeps the error data, and the parse
+  function takes an optional formatter (`formatter: proc (e:
+  SyntaxErrorInfo): string`). Without one, the default message is built from
+  the data.
+- **What the data holds:** the found token (kind, text, position), the
+  expected token kinds and the whole rule stack, outermost first. Not the
+  kind of failure.
+- **Lexer errors:** as in ANTLR 4, where the lexer reports to the same
+  `syntaxError` listener with no offending token: they go through the same
+  hook, with the character and position as data and no found token.
 
 - [ ] Error data type in the runtime, kept in `Diagnostics` or alongside it
 - [ ] The hook in the interpreter and the generated parsers; regenerate the

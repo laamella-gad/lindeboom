@@ -50,20 +50,20 @@ and only the other decisions call `p.predict(decision)`. The ATN is emitted
 as data in the generated module; prediction lives in the runtime, shared by
 the interpreter and generated parsers.
 
-## To decide
+## Decided
 
-- **Replace or add.** ALL(*) instead of ordered backtracking, or as a
-  grammar option with backtracking kept. Behaviour differs on grammars
-  where ordered choice hides an alternative (the `'x' | 'x' 'y'` case).
-- **Warnings.** With ALL(*) a non-LL(1) decision is normal, so the current
-  "is not LL(1) ... trying them in order" warning could go, become a hint,
-  or stay. Ambiguities found at parse time could be reported in a
-  diagnostic mode (`lindeboom parse --ambiguities`), as ANTLR's
-  `reportAmbiguity`.
-- **Two-stage parsing.** The paper's SLL-only first pass with an LL
-  re-parse on error (section 3.2), or full LL fallback per decision only.
-- **DFA cache lifetime.** Per parse, or kept in a module-level variable
-  shared by all parses (faster, but not thread-safe without a lock).
+- **Replace:** ALL(*) for every non-LL(1) decision; the backtracking code
+  (`mark` / `reset` / `commit` speculation) goes.
+- **Warnings:** the "is not LL(1) ... trying them in order" warnings are
+  removed, as ANTLR 4 does not warn about non-LL(1) decisions. No ambiguity
+  reporting mode for now.
+- **Prediction mode:** as ANTLR 4's default (`PredictionMode.LL`): SLL
+  prediction per decision, falling back to full LL with the call stack when
+  SLL finds a conflict. No built-in two-stage parse; in ANTLR that is a
+  pattern the user sets up (SLL with a bail-out strategy, then a re-parse).
+- **DFA cache:** shared, in a module-level variable of the generated parser
+  (one per interpreter `Analysis`), kept across parses, as ANTLR 4. Not
+  thread-safe; parsing from several threads needs a lock.
 
 ## Tasks
 
@@ -72,6 +72,8 @@ the interpreter and generated parsers.
       conflict and ambiguity detection, precedence predicates
 - [ ] Interpreter and code generator use it for non-LL(1) decisions;
       regenerate the examples and the ldb front end
+- [ ] Remove the backtracking code and the "is not LL(1)" warnings, and the
+      tests that expect them (`tparsegen`, `tcli`)
 - [ ] Syntax errors from prediction (no viable alternative) report the
       farthest token reached with the tokens expected there, and recovery
       (issue 7) keeps working

@@ -12,14 +12,12 @@ name`. `label` is a natural element name in many grammars (an assembler's or
 a disassembler's labels, a statement label), and the user can't tell from
 the grammar which names are taken.
 
-## To decide
+## Decided
 
-- Rename the clashing parts of the parse tree API (the `label` field to,
-  say, `edge`), so ordinary words stay free;
-- or generate accessors under a prefix or in their own namespace only when
-  they clash;
-- or keep the error, but list the reserved names in `docs/DESIGN.md` and in
-  the message.
+Rename the `label` field of `ParseNode` (to `edge`, or a similar word that
+is unlikely as a grammar label), so `label=` is free. The other reserved
+names (`kind`, `tok`, `sons`, `len`, `text`, `pos`, `items`, `treeRepr`)
+stay reserved.
 
 - [ ] The chosen way, in the runtime, the code generator and the checks
 - [ ] Tests in `tchecks`/`tparsegen`
