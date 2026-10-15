@@ -1,7 +1,7 @@
 ---
 id: 14
 title: Syntax errors as data, with a formatter hook
-status: open
+status: done
 labels: [diagnostics]
 ---
 
@@ -45,12 +45,41 @@ end of the line`, and words the message as it likes.
   `syntaxError` listener with no offending token: they go through the same
   hook, with the character and position as data and no found token.
 
-- [ ] Error data type in the runtime, kept in `Diagnostics` or alongside it
-- [ ] The hook in the interpreter and the generated parsers; regenerate the
+- [x] Error data type in the runtime, kept in `Diagnostics` or alongside it
+- [x] The hook in the interpreter and the generated parsers; regenerate the
       examples and the ldb front end
-- [ ] Default message with the found token's text
-- [ ] Tests in `tparsegen` (default message and a custom formatter); the
+- [x] Default message with the found token's text
+- [x] Tests in `tparsegen` (default message and a custom formatter); the
       golden outputs updated; documented in `docs/DESIGN.md`
 
 Depends on issue 13 for complete expected sets: a formatter can only list
 what the parser recorded.
+
+Notes:
+
+- `SyntaxErrorInfo` is in `runtime/diagnostics.nim`, since the lexer
+  reports with it too: `pos`, `msg` (the default message), `hasToken`,
+  `found` (token kind ordinal), `text`, `expected` (kind ordinals, EOF last)
+  and `rules` (rule names, outermost first). `Diagnostic.syntax` is a `ref`
+  to it, nil for other diagnostics.
+- The rule stack is the one when the error is reported, which can be
+  shallower than where the farthest failure was recorded (issue 13's
+  `dataType` case), as in ANTLR. An error found by `finish` after the start
+  rule returned has an empty stack.
+- The formatter (`SyntaxErrorFormatter = proc (e: SyntaxErrorInfo):
+  string`) is applied after parsing, rewording every diagnostic that has
+  syntax data, so lexer and indentation errors go through it too. A lexer
+  error's `text` is the character that starts no token; indentation errors
+  have no text.
+- Generated parsers: `parseX(src, filename = "input", formatter = nil)`, and
+  `foundKind(e)` / `expectedKinds(e)` give the kinds as `TokenKind`. The
+  interpreter's `interpret` takes the same optional formatter.
+- Default message: `found ID 'bar'`. Literals and EOF keep their name, as do
+  tokens whose text is only white space (a newline, an indent). The text is
+  escaped like the lexer's "unexpected character" (control characters,
+  quotes, backslashes, invalid UTF-8 as `\xHH`) and cut to 20 characters
+  with `...`. `describeFound` and `quoteText` are exported for formatters
+  that want the same.
+- Tests: `tparsegen` (default text, the data, a formatter on lexer and
+  parser errors), `tparsecodegen` (a formatter on a generated parser using
+  `TokenKind`s); golden outputs updated.

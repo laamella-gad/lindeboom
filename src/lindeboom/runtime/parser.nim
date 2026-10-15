@@ -47,8 +47,9 @@ type
     i*: int
     source: SourceText
     names: seq[string]      ## token names by kind
+    ruleNames: seq[string]  ## rule names by number
     follows: FollowProc
-    errors: Diagnostics
+    errors: seq[SyntaxErrorInfo]
     failAt: int             ## farthest token where a match failed
     failExpected: seq[int]  ## token kinds expected there
     rules: seq[int]         ## the rules being parsed, innermost last
@@ -156,13 +157,21 @@ func describeToken*(name: string): string =
   ## A token name for an error message.
   if name == "EOF": "end of input" else: name
 
+func describeFound*(name, text: string): string =
+  ## The token found, for an error message: its name, with its text unless
+  ## the name says it (a literal, EOF) or the text is only white space.
+  result = describeToken(name)
+  if not name.startsWith('\'') and name != "EOF" and text.strip.len > 0:
+    result.add " " & quoteText(text)
+
 func expectedMessage*(expected: openArray[string], found: string): string =
-  ## `expected ID, INT or '(' but found ':'`
+  ## `expected ID, INT or '(' but found ':'`; `found` is as from
+  ## `describeFound`.
   result = "expected "
   for i, x in expected:
     if i > 0: result.add(if i == expected.high: " or " else: ", ")
     result.add describeToken(x)
-  result.add " but found " & describeToken(found)
+  result.add " but found " & found
 
 func peek*[K, L, T](p: ParserState[K, L, T]): T = p.tokens[p.i].kind
 
@@ -209,12 +218,19 @@ proc report[K, L, T](p: var ParserState[K, L, T]) =
   if not p.recovering and p.failAt > p.reportedAt:
     var kinds = p.failExpected
     kinds.sort()
-    var expected: seq[string]
+    var e = SyntaxErrorInfo(hasToken: true)
     for k in kinds:
-      if k != 0: expected.add p.names[k]
-    if 0 in kinds: expected.add p.names[0]
+      if k != 0: e.expected.add k
+    if 0 in kinds: e.expected.add 0
     let found = p.tokens[p.failAt]
-    p.errors.error(found.pos, expectedMessage(expected, p.names[ord(found.kind)]))
+    e.pos = found.pos
+    e.found = ord(found.kind)
+    e.text = found.text(p.source.data)
+    for r in p.rules: e.rules.add p.ruleNames[r]
+    var expected: seq[string]
+    for k in e.expected: expected.add p.names[k]
+    e.msg = expectedMessage(expected, describeFound(p.names[e.found], e.text))
+    p.errors.add e
     p.reportedAt = p.failAt
   p.recovering = true
   p.failAt = -1
@@ -318,11 +334,13 @@ proc matchSet*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
   p.take(n, label)
 
 proc initParserState*[K, L, T](tokens: seq[LexerToken[T]], src: string,
-    names: seq[string], follows: FollowProc): ParserState[K, L, T] =
+    names, ruleNames: seq[string], follows: FollowProc): ParserState[K, L, T] =
   ## `tokens` from `tokenize`, hidden tokens are dropped. `names` are the
-  ## token names by kind, for messages.
+  ## token names by kind and `ruleNames` the rule names by number, for
+  ## messages.
   result.source = SourceText(data: src)
   result.names = names
+  result.ruleNames = ruleNames
   result.follows = follows
   result.failAt = -1
   result.reportedAt = -1
@@ -340,15 +358,15 @@ proc finish*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     let err = p.errorNode
     while p.peek != T(0): p.skip(err)
     n.add err
-  for x in p.errors.items: d.error(x.pos, x.msg)
+  for e in p.errors: d.syntaxError(e)
 
 proc runParser*[K, L, T](tokens: seq[LexerToken[T]], src: string,
-    d: var Diagnostics, follows: FollowProc,
+    d: var Diagnostics, ruleNames: seq[string], follows: FollowProc,
     rule: proc (p: var ParserState[K, L, T]): ParseNode[K, L, T] {.nimcall.}):
     ParseNode[K, L, T] =
   ## Parses `tokens` with `rule`, which must be followed by the end of the
   ## input. Syntax errors are added to `d`; the tree has error nodes where
   ## the parser recovered from them.
-  var p = initParserState[K, L, T](tokens, src, enumNames(T), follows)
+  var p = initParserState[K, L, T](tokens, src, enumNames(T), ruleNames, follows)
   result = rule(p)
   p.finish(result, d)

@@ -114,19 +114,35 @@ const followSets: array[2, set[TokenKind]] = [
   {tkEOF}, # toplevel
   {tkEOF, tkMinus, tkStar, tkSlash, tkPlus, tkRParen}] # expression
 
+const ruleNames = ["toplevel", "expression"]
+
 proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
-proc parseWith(src, filename: string,
+func foundKind*(e: SyntaxErrorInfo): TokenKind =
+  ## The kind of the token a syntax error found, if `e.hasToken`.
+  TokenKind(e.found)
+
+func expectedKinds*(e: SyntaxErrorInfo): seq[TokenKind] =
+  ## The kinds of the tokens that could have come where a syntax error is.
+  for k in e.expected: result.add TokenKind(k)
+
+proc parseWith(src, filename: string, formatter: SyntaxErrorFormatter,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, follows, rule)
+    result.diagnostics, @ruleNames, follows, rule)
+  result.diagnostics.formatSyntaxErrors(formatter)
 
-proc parseToplevel*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `toplevel`.
-  parseWith(src, filename, ruleToplevel)
+proc parseToplevel*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `toplevel`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleToplevel)
 
-proc parseExpression*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `expression`.
-  parseWith(src, filename, proc (p: var Parser): Node = ruleExpression(p, 0))
+proc parseExpression*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `expression`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, proc (p: var Parser): Node =
+    ruleExpression(p, 0))

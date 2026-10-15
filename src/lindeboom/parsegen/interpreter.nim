@@ -157,15 +157,19 @@ func treeNames*(a: Analysis): TreeNames =
   for t in a.v.tokens: result.tokens.add t.name
 
 proc interpret*(a: Analysis, tokens: seq[LexerToken[int]], src: string, rule: int,
-    d: var Diagnostics): Node =
+    d: var Diagnostics, formatter: SyntaxErrorFormatter = nil): Node =
   ## Parses `tokens` (from `tokenize`) starting at `g.rules[rule]`, which must
   ## be followed by the end of the input. Syntax errors are added to `d`; the
-  ## tree has error nodes where the parser recovered from them.
-  var names: seq[string]
+  ## tree has error nodes where the parser recovered from them. The syntax
+  ## errors in `d`, the lexer's too, are worded by `formatter` if there is
+  ## one.
+  var names, ruleNames: seq[string]
   for t in a.v.tokens: names.add t.name
+  for r in a.g.rules: ruleNames.add r.name
   var follows = newSeq[TokenSet](a.g.rules.len)
   for r in a.parserRules: follows[r] = a.ruleFollow(r)
-  var p = initParserState[int, int, int](tokens, src, names,
+  var p = initParserState[int, int, int](tokens, src, names, ruleNames,
     proc (r, kind: int): bool = kind in follows[r])
   result = a.runRule(p, rule)
   p.finish(result, d)
+  d.formatSyntaxErrors(formatter)

@@ -64,18 +64,7 @@ func describeChar(src: string, i: int): string =
     let b = ord(src[i])
     "invalid UTF-8 byte 0x" & hexChars[b shr 4] & hexChars[b and 0xF]
   else:
-    let shown =
-      case ch
-      of "\n": "\\n"
-      of "\r": "\\r"
-      of "\t": "\\t"
-      of "'": "\\'"
-      of "\\": "\\\\"
-      else:
-        if ord(ch[0]) < 32 or ch[0] == '\x7F':
-          "\\x" & hexChars[ord(ch[0]) shr 4] & hexChars[ord(ch[0]) and 0xF]
-        else: ch
-    "unexpected character '" & shown & "'"
+    "unexpected character '" & escapeChar(ch) & "'"
 
 proc advancePos(pos: var SourcePos, src: string, a, b: int) =
   ## Moves `pos` over `src[a ..< b]`.
@@ -156,7 +145,7 @@ proc filterIndentation*[K](c: IndentConfig, src: string, tokens: seq[LexerToken[
             error = "unindent does not match any outer indentation level"
           elif c.tabs == tmStrict and ind.narrow != stack[^1].narrow:
             error = inconsistentTabs
-        if error.len > 0: d.error(tok.pos, error)
+        if error.len > 0: d.syntaxError(SyntaxErrorInfo(pos: tok.pos, msg: error))
         atLineStart = false
       if k in c.opens: inc depth
       elif k in c.closes and depth > 0: dec depth
@@ -186,9 +175,11 @@ proc tokenize*[K](t: LexerTables, src: string, d: var Diagnostics):
         action = t.acceptAction[state]
         stop = j
     if stop < 0:
-      if not failed: d.error(pos, describeChar(src, i))
-      failed = true
       stop = i + charLen(src, i)
+      if not failed:
+        d.syntaxError(SyntaxErrorInfo(pos: pos, msg: describeChar(src, i),
+          text: src[i ..< stop]))
+      failed = true
       pos.advancePos(src, i, stop)
       i = stop
     else:

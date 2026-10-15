@@ -431,83 +431,132 @@ const followSets: array[18, set[TokenKind]] = [
   {tkEOF, tkSemi, tkPipe, tkHash, tkMinusGt, tkLParen, tkRParen, tkDot, tkTilde,
       tkID, tkSTRING, tkCHARSET}] # suffix
 
+const ruleNames = ["file", "topLevel", "options", "option", "tokens",
+    "tokenNames", "indentation", "setting", "bracket", "rule", "ruleAlt",
+    "assoc", "command", "element", "atom", "primary", "subAlt", "suffix"]
+
 proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
-proc parseWith(src, filename: string,
+func foundKind*(e: SyntaxErrorInfo): TokenKind =
+  ## The kind of the token a syntax error found, if `e.hasToken`.
+  TokenKind(e.found)
+
+func expectedKinds*(e: SyntaxErrorInfo): seq[TokenKind] =
+  ## The kinds of the tokens that could have come where a syntax error is.
+  for k in e.expected: result.add TokenKind(k)
+
+proc parseWith(src, filename: string, formatter: SyntaxErrorFormatter,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, follows, rule)
+    result.diagnostics, @ruleNames, follows, rule)
+  result.diagnostics.formatSyntaxErrors(formatter)
 
-proc parseFile*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `file`.
-  parseWith(src, filename, ruleFile)
+proc parseFile*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `file`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleFile)
 
-proc parseTopLevel*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `topLevel`.
-  parseWith(src, filename, ruleTopLevel)
+proc parseTopLevel*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `topLevel`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleTopLevel)
 
-proc parseOptions*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `options`.
-  parseWith(src, filename, ruleOptions)
+proc parseOptions*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `options`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleOptions)
 
-proc parseOption*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `option`.
-  parseWith(src, filename, ruleOption)
+proc parseOption*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `option`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleOption)
 
-proc parseTokens*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `tokens`.
-  parseWith(src, filename, ruleTokens)
+proc parseTokens*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `tokens`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleTokens)
 
-proc parseTokenNames*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `tokenNames`.
-  parseWith(src, filename, ruleTokenNames)
+proc parseTokenNames*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `tokenNames`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleTokenNames)
 
-proc parseIndentation*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `indentation`.
-  parseWith(src, filename, ruleIndentation)
+proc parseIndentation*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `indentation`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleIndentation)
 
-proc parseSetting*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `setting`.
-  parseWith(src, filename, ruleSetting)
+proc parseSetting*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `setting`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleSetting)
 
-proc parseBracket*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `bracket`.
-  parseWith(src, filename, ruleBracket)
+proc parseBracket*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `bracket`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleBracket)
 
-proc parseRule*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `rule`.
-  parseWith(src, filename, ruleRule)
+proc parseRule*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `rule`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleRule)
 
-proc parseRuleAlt*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `ruleAlt`.
-  parseWith(src, filename, ruleRuleAlt)
+proc parseRuleAlt*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `ruleAlt`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleRuleAlt)
 
-proc parseAssoc*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `assoc`.
-  parseWith(src, filename, ruleAssoc)
+proc parseAssoc*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `assoc`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleAssoc)
 
-proc parseCommand*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `command`.
-  parseWith(src, filename, ruleCommand)
+proc parseCommand*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `command`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleCommand)
 
-proc parseElement*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `element`.
-  parseWith(src, filename, ruleElement)
+proc parseElement*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `element`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleElement)
 
-proc parseAtom*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `atom`.
-  parseWith(src, filename, ruleAtom)
+proc parseAtom*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `atom`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleAtom)
 
-proc parsePrimary*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `primary`.
-  parseWith(src, filename, rulePrimary)
+proc parsePrimary*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `primary`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, rulePrimary)
 
-proc parseSubAlt*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `subAlt`.
-  parseWith(src, filename, ruleSubAlt)
+proc parseSubAlt*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `subAlt`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleSubAlt)
 
-proc parseSuffix*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `suffix`.
-  parseWith(src, filename, ruleSuffix)
+proc parseSuffix*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `suffix`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleSuffix)

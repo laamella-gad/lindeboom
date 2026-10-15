@@ -48,4 +48,30 @@ block parsecodegen_standalone:
   doAssert got == @["json\n└── array\n    ├── '['\n    ├── elements: number\n" &
     "    │   └── NUMBER \"1\"\n    └── ']'\n"], $got
 
+block parsecodegen_formatter:
+  # a formatter gets the error data with the generated token kinds
+  let dir = tmp / "formatter"
+  discard generate(cases[1], dir, standalone = false)
+  writeFile(dir / "driver.nim", """
+import std/[os, strutils]
+import ./calc_parser
+
+proc words(e: SyntaxErrorInfo): string =
+  if not e.hasToken: return "cannot read " & e.text
+  var names: seq[string]
+  for k in e.expectedKinds: names.add(if k == tkNUMBER: "a number" else: $k)
+  result = e.rules.join(" > ") & ": wanted " & names.join(" or ") & ", got " &
+    $e.foundKind & " " & e.text.escape
+
+for f in commandLineParams():
+  for d in parseCalc(readFile(f), formatter = words).diagnostics: echo d.msg
+  stdout.write "----\n"
+""")
+  let got = runDriver(compile(dir, standalone = false), dir, @["1 +", "1 $ 2", "(1"])
+  doAssert got == @[
+    "calc > expr > term > factor: wanted '-' or '(' or a number, got EOF \"\"\n",
+    "cannot read $\ncalc > expr > term: wanted '+' or '-' or '*' or '/' or ')' or EOF, " &
+      "got NUMBER \"2\"\n",
+    "calc > expr > term > factor: wanted '+' or '-' or '*' or '/' or ')', got EOF \"\"\n"], $got
+
 removeDir(tmp)

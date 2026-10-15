@@ -59,6 +59,13 @@ Key decisions:
   rules.
 - **Output:** a generic parse tree in the style of the Nim compiler's own
   `PNode`, processed with `case n.kind`.
+- **Syntax errors:** recovered from ANTLR style, and kept as data as well as
+  a message: each diagnostic has a `SyntaxErrorInfo` with the token found
+  (kind, text, position), the token kinds expected there and the rules being
+  parsed. The grammar has no say in the wording; as with ANTLR's error
+  listeners, the program does. `parseX(src, formatter = f)` words every
+  syntax error with `f`, lexer errors (which have no token) included; the
+  default message is `expected ... but found ID 'bar'`.
 - **Tooling:** a CLI to check grammars, generate code, run a grammar on
   input without generating code, and to output an ASCII art parse tree.
 

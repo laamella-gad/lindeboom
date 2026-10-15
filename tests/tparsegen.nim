@@ -74,7 +74,7 @@ block parsegen_nested_alternatives:
     s
     └── ';'
     """)
-  expectError(rules, "x", "1:1: expected 'a', 'b' or ';' but found ID")
+  expectError(rules, "x", "1:1: expected 'a', 'b' or ';' but found ID 'x'")
 
 block parsegen_token_sets:
   expectTree("s : op=('+' | '-') ~';' . ';' ;", "+ x 1;", """
@@ -84,8 +84,8 @@ block parsegen_token_sets:
     ├── INT "1"
     └── ';'
     """)
-  expectError("s : op=('+' | '-') ;", "x", "1:1: expected '+' or '-' but found ID")
-  expectError("s : ~ID ;", "x", "1:1: expected INT but found ID")
+  expectError("s : op=('+' | '-') ;", "x", "1:1: expected '+' or '-' but found ID 'x'")
+  expectError("s : ~ID ;", "x", "1:1: expected INT but found ID 'x'")
 
 block parsegen_list_labels:
   expectTree("s : xs=ID (',' xs=ID)* ;", "a, b", """
@@ -143,7 +143,7 @@ block parsegen_eof:
     s
     └── ID "x"
     """)
-  expectError("s : ID ;", "x y", "1:3: expected end of input but found ID")
+  expectError("s : ID ;", "x y", "1:3: expected end of input but found ID 'y'")
   expectError("s : ID ID ;", "x", "1:2: expected ID but found end of input")
 
 block parsegen_any_rule_is_a_start_rule:
@@ -152,7 +152,7 @@ block parsegen_any_rule_is_a_start_rule:
     e
     └── INT "42"
     """, rule = "e")
-  expectError(rules, "42", "1:1: expected 'let' but found INT")
+  expectError(rules, "42", "1:1: expected 'let' but found INT '42'")
 
 block parsegen_lexer_error:
   expectError("s : ID ;", "x$", "1:2: unexpected character '$'")
@@ -196,7 +196,7 @@ block parsegen_backtracking_alternatives:
     └── ID "a"
     """)
   # the first alternative that matches wins, even if the rule then fails
-  expectError(rules, "a b", "1:3: expected '=' or end of input but found ID")
+  expectError(rules, "a b", "1:3: expected '=' or end of input but found ID 'b'")
   # nested blocks, and sons of the failed attempt are dropped
   expectTree("s : 'a' (ID INT | ID ID) ;", "a x y", """
     s
@@ -246,7 +246,7 @@ block parsegen_farthest_error:
   # the error is where parsing got farthest, not where the last attempt failed
   let rules = "s : x=ID '=' ID ';' # assign | ID ';' # name ;"
   expectError(rules, "a = ;", "1:5: expected ID but found ';'")
-  expectError(rules, "a b", "1:3: expected '=' or ';' but found ID")
+  expectError(rules, "a b", "1:3: expected '=' or ';' but found ID 'b'")
 
 const exprRule = """
 e : e '(' ')'                       # call
@@ -310,7 +310,7 @@ block parsegen_precedence_tree:
     """)
   expectError(exprRule, "a +", "1:4: expected '(', '-' or ID but found end of input")
   expectError(exprRule, "a b",
-    "1:3: expected '(', '^', '-', '*', '/', '+' or end of input but found ID")
+    "1:3: expected '(', '^', '-', '*', '/', '+' or end of input but found ID 'b'")
 
 block parsegen_precedence_errors:
   expectProblem("e : e '+' e ;", "rule 'e' needs an alternative that does not start with 'e'")
@@ -325,10 +325,10 @@ block parsegen_precedence_errors:
 block parsegen_precedence_expected:
   # the operators that could extend the expression are in the message
   expectError("s : e ';' ;\n" & exprRule, "a b",
-    "1:3: expected ';', '(', '^', '-', '*', '/' or '+' but found ID")
+    "1:3: expected ';', '(', '^', '-', '*', '/' or '+' but found ID 'b'")
   # also after an operand that binds tighter, as the right side of '*'
   expectError("s : e ';' ;\n" & exprRule, "a * - b c",
-    "1:9: expected ';', '(', '^', '-', '*', '/' or '+' but found ID")
+    "1:9: expected ';', '(', '^', '-', '*', '/' or '+' but found ID 'c'")
 
 block parsegen_skipped_optionals_expected:
   # what skipped optional elements could have started is in the message
@@ -337,12 +337,66 @@ block parsegen_skipped_optionals_expected:
   expectError(rules, "x byte byte",
     "1:8: expected 'export', '{', '[', '(', NL or ID but found 'byte'", "s")
   expectError(rules, "x y 1",
-    "1:5: expected 'export', '{', '(' or NL but found INT", "s")
+    "1:5: expected 'export', '{', '(' or NL but found INT '1'", "s")
   # loops that end, and decisions that take an empty alternative
-  expectError("s : ID* INT? ';' ;", "x 1 x", "1:5: expected ';' but found ID")
+  expectError("s : ID* INT? ';' ;", "x 1 x", "1:5: expected ';' but found ID 'x'")
   expectError("s : ID* INT? ';' ;", "x x", "1:4: expected ';', ID or INT but found end of input")
-  expectError("s : ('a' | 'b' |) ';' ;", "c", "1:1: expected 'a', 'b' or ';' but found ID")
-  expectError("s : ID+ ';' ;", "x 1", "1:3: expected ';' or ID but found INT")
+  expectError("s : ('a' | 'b' |) ';' ;", "c", "1:1: expected 'a', 'b' or ';' but found ID 'c'")
+  expectError("s : ID+ ';' ;", "x 1", "1:3: expected ';' or ID but found INT '1'")
+
+proc syntaxErrors(rules, input: string, formatter: SyntaxErrorFormatter = nil):
+    seq[Diagnostic] =
+  ## The errors from parsing `input` with the first rule.
+  let (a, t, _) = analyzed(g(rules))
+  var d = Diagnostics(filename: "input")
+  discard a.interpret(tokenize[int](t, input, d), input, a.parserRules[0], d, formatter)
+  d.sorted
+
+block parsegen_found_token_text:
+  # a token with a pattern shows its text, escaped and shortened
+  expectError("s : INT ;", "abc", "1:1: expected INT but found ID 'abc'")
+  expectError("s : INT ;", "abcdefghijklmnopqrstuvwxyz",
+    "1:1: expected INT but found ID 'abcdefghijklmnopqrst...'")
+  let rules = "s : ID ;\nS : '\"' ~'\"'* '\"' ;"
+  expectError(rules, "\"a\tb'\\\"", "1:1: expected ID but found S '\"a\\tb\\'\\\\\"'")
+  # literals, EOF and white space keep their name
+  expectError("s : ID ';' ;", ";", "1:1: expected ID but found ';'")
+  expectError("s : ID INT ;", "x", "1:2: expected INT but found end of input")
+  expectError("s : ID ;\nNL : ';' [\\n]* ;", ";\n", "1:1: expected ID but found NL ';\\n'")
+  expectError("s : ID+ ;\nNL : '\\r'? '\\n' ;", "x\n", "1:2: expected ID but found NL")
+
+block parsegen_syntax_error_info:
+  # each syntax error keeps what it is about
+  let errors = syntaxErrors("s : a ';' ;\na : '(' INT? ')' ;", "( x ;")
+  doAssert errors.len == 1, $errors
+  let e = errors[0].syntax
+  doAssert e != nil and e.hasToken
+  doAssert e.pos == SourcePos(line: 1, col: 3) and e.text == "x"
+  doAssert e.msg == "expected ')' or INT but found ID 'x'" and e.msg == errors[0].msg
+  doAssert e.rules == @["s", "a"], $e.rules
+  let (a, _, _) = analyzed(g("s : a ';' ;\na : '(' INT? ')' ;"))
+  var names: seq[string]
+  for k in e.expected: names.add a.v.tokens[k].name
+  doAssert names == @["')'", "INT"] and a.v.tokens[e.found].name == "ID", $names
+  # a lexer error has no token, only the character
+  let lexed = syntaxErrors("s : ID ;", "x $")
+  doAssert lexed.len == 1 and lexed[0].syntax != nil and not lexed[0].syntax.hasToken
+  doAssert lexed[0].syntax.text == "$" and lexed[0].msg == "unexpected character '$'"
+  # other diagnostics have none
+  var d: Diagnostics
+  d.error(SourcePos(line: 1, col: 1), "not a syntax error")
+  doAssert d.items[0].syntax == nil
+
+block parsegen_formatter:
+  # a formatter words every syntax error, the lexer's too
+  proc words(e: SyntaxErrorInfo): string =
+    if e.hasToken: "wanted " & $e.expected.len & " kinds in " & e.rules[^1] & ", got " & e.text
+    else: "bad character " & e.text
+  let errors = syntaxErrors("s : '(' ID ')' ;", "( $ 1 )", words)
+  var msgs: seq[string]
+  for x in errors: msgs.add x.msg
+  doAssert msgs == @["bad character $", "wanted 1 kinds in s, got 1"], $msgs
+  doAssert errors[1].syntax.msg == "expected ID but found INT '1'"
 
 block parsegen_left_recursion:
   # left recursion through another rule, or not at the start of an

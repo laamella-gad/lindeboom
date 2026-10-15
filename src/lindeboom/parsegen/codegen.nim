@@ -327,25 +327,39 @@ proc genParserModule*(a: Analysis, grammarFile: string,
   for number, i in a.parserRules:
     g.wrapped(1, "{", g.idents(a.ruleFollow(i)),
       "}" & (if number < a.parserRules.high: "," else: "]") & " # " & a.g.rules[i].name)
+  var names: seq[string]
+  for i in a.parserRules: names.add nimString(a.g.rules[i].name)
+  g.s.add "\n"
+  g.wrapped(0, "const ruleNames = [", names, "]")
   g.s.add """
 
 proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
-proc parseWith(src, filename: string,
+func foundKind*(e: SyntaxErrorInfo): TokenKind =
+  ## The kind of the token a syntax error found, if `e.hasToken`.
+  TokenKind(e.found)
+
+func expectedKinds*(e: SyntaxErrorInfo): seq[TokenKind] =
+  ## The kinds of the tokens that could have come where a syntax error is.
+  for k in e.expected: result.add TokenKind(k)
+
+proc parseWith(src, filename: string, formatter: SyntaxErrorFormatter,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, follows, rule)
+    result.diagnostics, @ruleNames, follows, rule)
+  result.diagnostics.formatSyntaxErrors(formatter)
 """
   for i in a.parserRules:
     let r = a.g.rules[i]
-    g.s.add "\nproc parse" & a.ruleIdents[i] &
-      "*(src: string, filename = \"input\"): ParseResult[Node] =\n"
-    g.line(1, "## Parses `src` with rule `" & r.name & "`.")
+    g.s.add "\nproc parse" & a.ruleIdents[i] & "*(src: string, filename = \"input\",\n" &
+      "    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =\n"
+    g.line(1, "## Parses `src` with rule `" & r.name & "`. A `formatter` words the")
+    g.line(1, "## syntax errors instead of the default messages.")
     if a.isPrecRule[i]:
-      g.line(1, "parseWith(src, filename, proc (p: var Parser): Node = rule" &
-        a.ruleIdents[i] & "(p, 0))")
+      g.line(1, "parseWith(src, filename, formatter, proc (p: var Parser): Node =")
+      g.line(2, "rule" & a.ruleIdents[i] & "(p, 0))")
     else:
-      g.line(1, "parseWith(src, filename, rule" & a.ruleIdents[i] & ")")
+      g.line(1, "parseWith(src, filename, formatter, rule" & a.ruleIdents[i] & ")")
   g.s

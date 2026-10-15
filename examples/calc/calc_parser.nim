@@ -98,27 +98,46 @@ const followSets: array[4, set[TokenKind]] = [
   {tkEOF, tkPlus, tkMinus, tkRParen}, # term
   {tkEOF, tkPlus, tkMinus, tkStar, tkSlash, tkRParen}] # factor
 
+const ruleNames = ["calc", "expr", "term", "factor"]
+
 proc follows(rule, kind: int): bool = TokenKind(kind) in followSets[rule]
 
-proc parseWith(src, filename: string,
+func foundKind*(e: SyntaxErrorInfo): TokenKind =
+  ## The kind of the token a syntax error found, if `e.hasToken`.
+  TokenKind(e.found)
+
+func expectedKinds*(e: SyntaxErrorInfo): seq[TokenKind] =
+  ## The kinds of the tokens that could have come where a syntax error is.
+  for k in e.expected: result.add TokenKind(k)
+
+proc parseWith(src, filename: string, formatter: SyntaxErrorFormatter,
     rule: proc (p: var Parser): Node {.nimcall.}): ParseResult[Node] =
   result.diagnostics.filename = filename
   let tokens = tokenize(src, result.diagnostics)
   result.tree = runParser[NodeKind, NodeLabel, TokenKind](tokens, src,
-    result.diagnostics, follows, rule)
+    result.diagnostics, @ruleNames, follows, rule)
+  result.diagnostics.formatSyntaxErrors(formatter)
 
-proc parseCalc*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `calc`.
-  parseWith(src, filename, ruleCalc)
+proc parseCalc*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `calc`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleCalc)
 
-proc parseExpr*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `expr`.
-  parseWith(src, filename, ruleExpr)
+proc parseExpr*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `expr`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleExpr)
 
-proc parseTerm*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `term`.
-  parseWith(src, filename, ruleTerm)
+proc parseTerm*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `term`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleTerm)
 
-proc parseFactor*(src: string, filename = "input"): ParseResult[Node] =
-  ## Parses `src` with rule `factor`.
-  parseWith(src, filename, ruleFactor)
+proc parseFactor*(src: string, filename = "input",
+    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
+  ## Parses `src` with rule `factor`. A `formatter` words the
+  ## syntax errors instead of the default messages.
+  parseWith(src, filename, formatter, ruleFactor)
