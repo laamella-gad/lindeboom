@@ -1,7 +1,7 @@
 ## Emits a generated parser module: `NodeKind`, `NodeLabel`, label
 ## accessors, one recursive-descent proc per rule and a `parse` proc per rule.
 
-import std/[packedsets, strutils, tables]
+import std/[algorithm, packedsets, strutils, tables]
 import ../grammar/[ast, vocabulary], ./analysis
 
 type
@@ -60,22 +60,77 @@ proc genBody(g: var Gen, e: GExpr, label: string, indent: int) =
   g.genExpr(e, label, indent)
   if g.s.len == before: g.line(indent, "discard")
 
+type Group = tuple
+  cands: seq[int]  ## the alternatives a token can start, in order
+  tokens: TokenSet
+
+func cmpGroups(x, y: Group): int =
+  ## By first alternative, then fewer alternatives, then the alternatives.
+  result = cmp(x.cands[0], y.cands[0])
+  if result == 0: result = cmp(x.cands.len, y.cands.len)
+  var i = 0
+  while result == 0 and i < x.cands.len:
+    result = cmp(x.cands[i], y.cands[i])
+    inc i
+
+func groups(sets: seq[TokenSet]): seq[Group] =
+  ## The tokens of `sets` grouped by the alternatives they select, ordered
+  ## by first alternative, unambiguous groups first.
+  var byCands: Table[seq[int], TokenSet]
+  var all: TokenSet
+  for s in sets: all.incl s
+  for k in all:
+    var cands: seq[int]
+    for i, s in sets:
+      if k in s: cands.add i
+    byCands.mgetOrPut(cands, TokenSet()).incl k
+  for cands, tokens in byCands: result.add (cands, tokens)
+  result.sort(cmpGroups)
+
+proc genCandidates(g: var Gen, alts: seq[GExpr], kinds: seq[string], cands: seq[int],
+    label: string, indent: int) =
+  ## Tries `cands` in order, backtracking from all but the last.
+  let i = cands[0]
+  let ind = if cands.len > 1: indent + 1 else: indent
+  if cands.len > 1:
+    g.line(indent, "let m = p.mark(result)")
+    g.line(indent, "try:")
+  if kinds[i].len > 0: g.line(ind, "result = p.newNode(" & kinds[i] & ")")
+  g.genBody(alts[i], label, ind)
+  if cands.len > 1:
+    g.line(indent, "except SyntaxError:")
+    g.line(indent + 1, "p.reset(result, m)")
+    g.genCandidates(alts, kinds, cands[1 .. ^1], label, indent + 1)
+
 proc genDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string], label: string,
     indent: int) =
   ## `case p.peek` choosing between `alts`; a non-empty `kinds[i]` starts a
   ## new node of that kind for alternative i.
+  var sets: seq[TokenSet]
   var all: TokenSet
+  for alt in alts:
+    sets.add g.a.predict(alt)
+    all.incl sets[^1]
   g.line(indent, "case p.peek")
-  for i, alt in alts:
-    let s = g.a.predict(alt)
-    if s.len > 0:
-      all.incl s
-      g.wrapped(indent, "of ", g.idents(s), ":")
-      if kinds[i].len > 0: g.line(indent + 1, "result = p.newNode(" & kinds[i] & ")")
-      g.genBody(alt, label, indent + 1)
+  for (cands, tokens) in groups(sets):
+    g.wrapped(indent, "of ", g.idents(tokens), ":")
+    g.genCandidates(alts, kinds, cands, label, indent + 1)
   if all.len < g.a.v.tokens.len:
     g.line(indent, "else:")
     g.wrapped(indent + 1, "p.fail({", g.idents(all), "})")
+
+proc genIteration(g: var Gen, e: GExpr, label: string, indent: int) =
+  ## One more iteration of `*` or `+` inside its `while`; when ambiguous,
+  ## leaves the loop if it fails.
+  if g.a.isAmbiguous(e):
+    g.line(indent, "let m = p.mark(result)")
+    g.line(indent, "try:")
+    g.genBody(e.inner, label, indent + 1)
+    g.line(indent, "except SyntaxError:")
+    g.line(indent + 1, "p.reset(result, m)")
+    g.line(indent + 1, "break")
+  else:
+    g.genBody(e.inner, label, indent)
 
 proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
   let label = if e.label.len > 0: g.a.labelIdents[g.a.labelIndex[e.label]] else: label
@@ -87,15 +142,28 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
       for x in e.items: g.genExpr(x, label, indent)
     of ekAlt:
       g.genDecision(e.items, newSeq[string](e.items.len), label, indent)
-    of ekOpt, ekStar:
-      let s = g.a.first(e.inner)
-      g.wrapped(indent, (if e.kind == ekOpt: "if" else: "while") & " p.peek in {",
-        g.idents(s), "}:")
-      g.genBody(e.inner, label, indent + 1)
+    of ekOpt:
+      g.wrapped(indent, "if p.peek in {", g.idents(g.a.first(e.inner)), "}:")
+      if g.a.isAmbiguous(e):
+        g.line(indent + 1, "let m = p.mark(result)")
+        g.line(indent + 1, "try:")
+        g.genBody(e.inner, label, indent + 2)
+        g.line(indent + 1, "except SyntaxError:")
+        g.line(indent + 2, "p.reset(result, m)")
+      else:
+        g.genBody(e.inner, label, indent + 1)
+    of ekStar:
+      g.wrapped(indent, "while p.peek in {", g.idents(g.a.first(e.inner)), "}:")
+      g.genIteration(e, label, indent + 1)
     of ekPlus:
-      g.line(indent, "while true:")
-      g.genBody(e.inner, label, indent + 1)
-      g.wrapped(indent + 1, "if p.peek notin {", g.idents(g.a.first(e.inner)), "}: break")
+      if g.a.isAmbiguous(e):
+        g.genBody(e.inner, label, indent)
+        g.wrapped(indent, "while p.peek in {", g.idents(g.a.first(e.inner)), "}:")
+        g.genIteration(e, label, indent + 1)
+      else:
+        g.line(indent, "while true:")
+        g.genBody(e.inner, label, indent + 1)
+        g.wrapped(indent + 1, "if p.peek notin {", g.idents(g.a.first(e.inner)), "}: break")
     of ekRuleRef:
       let r = g.a.ruleIndex[e.name]
       let prec =
@@ -109,20 +177,49 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
     else:
       raiseAssert "not a parser element: " & $e.kind
 
+proc genExtend(g: var Gen, i, k, indent: int) =
+  ## Binary or suffix alternative `k` of rule `i` after the expression so far.
+  let items = g.a.g.rules[i].alts[k].body.items
+  let label = if items[0].label.len > 0: g.a.labelIdents[g.a.labelIndex[items[0].label]] else: ""
+  g.line(indent, "result = p.wrap(result, " & g.a.kindIdents[g.a.altKinds[i][k]] &
+    labelArg(label) & ")")
+  for x in items[1 .. ^1]: g.genExpr(x, "", indent)
+
 proc genLoop(g: var Gen, i: int) =
   ## The binary and suffix alternatives of precedence rule `i`.
   let r = g.a.g.rules[i]
-  g.line(1, "while true:")
-  g.line(2, "case p.peek")
+  var loopAlts: seq[int]
+  var sets: seq[TokenSet]
   for k, alt in r.alts:
     if g.a.isLoopAlt(i, k):
-      let items = alt.body.items
-      g.wrapped(2, "of ", g.idents(g.a.continuation(alt.body)), ":")
+      loopAlts.add k
+      sets.add g.a.continuation(alt.body)
+  g.line(1, "while true:")
+  g.line(2, "case p.peek")
+  for (cands, tokens) in groups(sets):
+    g.wrapped(2, "of ", g.idents(tokens), ":")
+    if cands.len == 1:
+      let k = loopAlts[cands[0]]
       g.line(3, "if prec > " & $g.a.precedence(i, k) & ": break")
-      let label = if items[0].label.len > 0: g.a.labelIdents[g.a.labelIndex[items[0].label]] else: ""
-      g.line(3, "result = p.wrap(result, " & g.a.kindIdents[g.a.altKinds[i][k]] &
-        labelArg(label) & ")")
-      for x in items[1 .. ^1]: g.genExpr(x, "", 3)
+      g.genExtend(i, k, 3)
+    else:
+      # all but the last are tried speculatively
+      g.line(3, "var done = false")
+      for j, c in cands:
+        let k = loopAlts[c]
+        g.line(3, (if j > 0: "if not done and " else: "if ") & "prec <= " &
+          $g.a.precedence(i, k) & ":")
+        if j < cands.high:
+          g.line(4, "let m = p.mark(result)")
+          g.line(4, "try:")
+          g.genExtend(i, k, 5)
+          g.line(5, "done = true")
+          g.line(4, "except SyntaxError:")
+          g.line(5, "p.reset(result, m)")
+        else:
+          g.genExtend(i, k, 4)
+          g.line(4, "done = true")
+      g.line(3, "if not done: break")
   g.line(2, "else:")
   g.line(3, "break")
 

@@ -165,20 +165,88 @@ block parsegen_tree_text_escapes:
   let src = "grammar G;\ns : S ;\nS : '\"' ~'\"'* '\"' ;\n"
   doAssert tree(src, "\"a\nb\"") == "s\n└── S \"\\\"a\\nb\\\"\"\n"
 
-block parsegen_conflicts:
+block parsegen_conflicts_are_warnings:
   expectProblem("s : ID INT | ID ID ;",
-    "2:14: error: rule 's' is not LL(1): alternatives 1 and 2 can both start with ID")
+    "2:14: warning: rule 's' is not LL(1): alternatives 1 and 2 can both start with ID; " &
+    "trying them in order")
   expectProblem("s : ('a' | 'a' ID) ;",
-    "alternatives 1 and 2 of this block can both start with 'a'")
+    "alternatives 1 and 2 of this block can both start with 'a'; trying them in order")
   expectProblem("s : e 'a' ;\ne : 'a' | ;",
     "rule 'e' is not LL(1): alternatives 1 and 2 can both start with 'a'")
   expectProblem("s : (',' ID)* ','? ;",
-    "2:5: error: rule 's' is not LL(1): ',' can start another iteration of the loop or follow it")
+    "2:5: warning: rule 's' is not LL(1): ',' can start another iteration of the loop " &
+    "or follow it; trying another iteration of the loop first")
   expectProblem("s : ID? ID ;",
-    "rule 's' is not LL(1): ID can start the optional element or follow it")
+    "rule 's' is not LL(1): ID can start the optional element or follow it; " &
+    "trying the optional element first")
   expectProblem("s : (ID | INT)? (ID | INT) ;",
     "ID and INT can each start the optional element or follow it")
   doAssert problems(g("s : ID (',' ID)* ';'? ;")).len == 0
+
+block parsegen_backtracking_alternatives:
+  let rules = "s : x=ID '=' INT # assign | ID # name | ID ID # pair ;"
+  expectTree(rules, "a = 1", """
+    assign
+    ├── x: ID "a"
+    ├── '='
+    └── INT "1"
+    """)
+  expectTree(rules, "a", """
+    name
+    └── ID "a"
+    """)
+  # the first alternative that matches wins, even if the rule then fails
+  expectError(rules, "a b", "1:3: expected '=' or end of input but found ID")
+  # nested blocks, and sons of the failed attempt are dropped
+  expectTree("s : 'a' (ID INT | ID ID) ;", "a x y", """
+    s
+    ├── 'a'
+    ├── ID "x"
+    └── ID "y"
+    """)
+
+block parsegen_backtracking_loops:
+  let rules = "s : ID (',' ID)* ','? ;"
+  expectTree(rules, "a, b,", """
+    s
+    ├── ID "a"
+    ├── ','
+    ├── ID "b"
+    └── ','
+    """)
+  expectTree("s : ('a' ID)? 'a' INT ;", "a 1", """
+    s
+    ├── 'a'
+    └── INT "1"
+    """)
+  expectTree("s : (ID ',')+ ID ;", "a, b", """
+    s
+    ├── ID "a"
+    ├── ','
+    └── ID "b"
+    """)
+
+block parsegen_backtracking_operators:
+  let rules = "e : e '[' e ']' # index | e '[' e ':' e ']' # slice | ID # name ;"
+  expectTree(rules, "a[b:c]", """
+    slice
+    ├── name
+    │   └── ID "a"
+    ├── '['
+    ├── name
+    │   └── ID "b"
+    ├── ':'
+    ├── name
+    │   └── ID "c"
+    └── ']'
+    """)
+  expectProblem(rules, "alternatives 1 and 2 can both continue 'e' with '['; trying them in order")
+
+block parsegen_farthest_error:
+  # the error is where parsing got farthest, not where the last attempt failed
+  let rules = "s : x=ID '=' ID ';' # assign | ID ';' # name ;"
+  expectError(rules, "a = ;", "1:5: expected ID but found ';'")
+  expectError(rules, "a b", "1:3: expected '=' or ';' but found ID")
 
 const exprRule = """
 e : e '(' ')'                       # call
@@ -249,7 +317,7 @@ block parsegen_precedence_errors:
   expectProblem("e : e '+'? | INT ;",
     "rule 'e': alternative 1 can match empty input after the leading 'e'")
   expectProblem("e : e '+' INT | e '+' ID | INT ;",
-    "rule 'e' is not LL(1): alternatives 1 and 2 can both continue 'e' with '+'")
+    "warning: rule 'e' is not LL(1): alternatives 1 and 2 can both continue 'e' with '+'")
   expectProblem("e : e '+' INT | ID | ID INT ;",
     "rule 'e' is not LL(1): alternatives 2 and 3 can both start with ID")
 

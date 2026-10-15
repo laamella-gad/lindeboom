@@ -17,10 +17,11 @@ block cli_check_ok:
   doAssert code == 0, output
   doAssert "ok (4 parser rules, 3 lexer rules)" in output, output
 
-block cli_check_reports_analysis_errors:
+block cli_check_reports_analysis_warnings:
   let (output, code) = run("check " & quoteShell(root / "examples" / "minipy" / "minipy.ldb"))
-  doAssert code == 1, output
-  doAssert "error: rule 'smallStmt' is not LL(1)" in output, output
+  doAssert code == 0, output
+  doAssert "warning: rule 'smallStmt' is not LL(1)" in output, output
+  doAssert "ok (12 parser rules, 8 lexer rules)" in output, output
 
 block cli_check_errors:
   let f = getTempDir() / "lindeboom_tcli_bad.ldb"

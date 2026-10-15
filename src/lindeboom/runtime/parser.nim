@@ -5,7 +5,7 @@
 ## `kind` is the rule or alternative label that produced the node, `sons` are
 ## its children in input order. Kind 0 is a token, label 0 means no label.
 
-import std/strutils
+import std/[algorithm, strutils]
 import ./lexer
 
 export lexer
@@ -33,6 +33,14 @@ type
     tokens*: seq[LexerToken[T]]
     i*: int
     source: SourceText
+    failAt: int             ## farthest token where a match failed
+    failExpected: seq[int]  ## token kinds expected there
+
+  Mark*[K, L, T] = object
+    ## Parser position to return to when a speculative parse fails.
+    i*: int
+    node: ParseNode[K, L, T]
+    sons: int
 
   TreeNames* = object
     ## Display names by ordinal, for `treeRepr`.
@@ -132,9 +140,6 @@ func expectedMessage*(expected: openArray[string], found: string): string =
     result.add describeToken(x)
   result.add " but found " & describeToken(found)
 
-proc syntaxError*(pos: SourcePos, msg: string) {.noreturn.} =
-  raise (ref SyntaxError)(msg: msg, pos: pos)
-
 func peek*[K, L, T](p: ParserState[K, L, T]): T = p.tokens[p.i].kind
 
 proc newNode*[K, L, T](p: ParserState[K, L, T], kind: K): ParseNode[K, L, T] =
@@ -160,10 +165,46 @@ proc take*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
       label)
     inc p.i
 
-proc fail*[K, L, T](p: ParserState[K, L, T], expected: set[T]) {.noreturn.} =
-  var names: seq[string]
-  for x in expected: names.add $x
-  syntaxError(p.tokens[p.i].pos, expectedMessage(names, $p.peek))
+proc fail*[K, L, T](p: var ParserState[K, L, T], expected: openArray[int]) {.noreturn.} =
+  ## Fails to match one of the `expected` token kinds at the current token.
+  ## The error that is reported is the one at the farthest token, which
+  ## after backtracking need not be the last one.
+  if p.i > p.failAt:
+    p.failAt = p.i
+    p.failExpected.setLen 0
+  if p.i == p.failAt:
+    for k in expected:
+      if k notin p.failExpected: p.failExpected.add k
+  raise (ref SyntaxError)(msg: "syntax error", pos: p.tokens[p.i].pos)
+
+proc fail*[K, L, T](p: var ParserState[K, L, T], expected: set[T]) {.noreturn.} =
+  var kinds: seq[int]
+  for x in expected: kinds.add ord(x)
+  p.fail(kinds)
+
+proc syntaxErrorMessage*[K, L, T](p: ParserState[K, L, T], names: openArray[string]):
+    (SourcePos, string) =
+  ## Position and message of the farthest failure, with token names by kind.
+  ## Expected tokens are listed by kind, with EOF last.
+  var kinds = p.failExpected
+  kinds.sort()
+  var expected: seq[string]
+  for k in kinds:
+    if k != 0: expected.add names[k]
+  if 0 in kinds: expected.add names[0]
+  let found = p.tokens[p.failAt]
+  (found.pos, expectedMessage(expected, names[ord(found.kind)]))
+
+func mark*[K, L, T](p: ParserState[K, L, T], node: ParseNode[K, L, T]): Mark[K, L, T] =
+  ## The current position, and the sons of `node` so far.
+  Mark[K, L, T](i: p.i, node: node, sons: if node == nil: 0 else: node.sons.len)
+
+proc reset*[K, L, T](p: var ParserState[K, L, T], node: var ParseNode[K, L, T],
+    m: Mark[K, L, T]) =
+  ## Returns to `m` after a failed speculative parse.
+  p.i = m.i
+  node = m.node
+  if node != nil: node.sons.setLen m.sons
 
 proc match*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     kind: T, label = L(0)) =
@@ -179,6 +220,7 @@ proc initParserState*[K, L, T](tokens: seq[LexerToken[T]], src: string):
     ParserState[K, L, T] =
   ## `tokens` from `tokenize`, hidden tokens are dropped.
   result.source = SourceText(data: src)
+  result.failAt = -1
   for t in tokens:
     if not t.hidden: result.tokens.add t
 
@@ -194,6 +236,7 @@ proc runParser*[K, L, T](tokens: seq[LexerToken[T]], src: string,
     try:
       result = rule(p)
       if p.peek != T(0): p.fail({T(0)})
-    except SyntaxError as e:
-      d.error(e.pos, e.msg)
+    except SyntaxError:
+      let (pos, msg) = p.syntaxErrorMessage(enumNames(T))
+      d.error(pos, msg)
       result = nil

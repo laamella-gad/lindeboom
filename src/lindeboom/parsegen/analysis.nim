@@ -3,6 +3,11 @@
 ##
 ## Every rule can be a start rule, so every rule can be followed by EOF.
 ##
+## Where one token of lookahead is not enough, the parser tries the
+## alternatives that the token can start in order, backtracking from all but
+## the last; a `?`, `*` or `+` element is tried before what follows it. The
+## analysis reports these decisions as warnings.
+##
 ## A rule with an alternative that starts with the rule itself is a
 ## precedence rule, parsed by precedence climbing as in ANTLR 4: its
 ## primary and prefix alternatives start an expression, its binary and
@@ -207,6 +212,11 @@ func predict*(a: Analysis, e: GExpr): TokenSet =
 
 func first*(a: Analysis, e: GExpr): TokenSet = a.first[e]
 
+func isAmbiguous*(a: Analysis, e: GExpr): bool =
+  ## Whether the next token can both start and follow the `?`, `*` or `+`
+  ## element `e`, which is then tried speculatively.
+  (a.first[e.inner] * a.follow[e]).len > 0
+
 func sortedKinds*(s: TokenSet): seq[int] =
   for k in s: result.add k
   result.sort()
@@ -355,8 +365,9 @@ proc checkChoices(a: Analysis, rule: string, choices: seq[Choice], what: string,
     while i < j:
       let common = choices[i].tokens * choices[j].tokens
       if common.len > 0:
-        d.error(choices[j].pos, "rule '" & rule & "' is not LL(1): alternatives " &
-          $choices[i].number & " and " & $choices[j].number & what & a.tokenList(common))
+        d.warning(choices[j].pos, "rule '" & rule & "' is not LL(1): alternatives " &
+          $choices[i].number & " and " & $choices[j].number & what & a.tokenList(common) &
+          "; trying them in order")
         i = j
       else:
         inc i
@@ -388,9 +399,9 @@ proc checkConflicts(a: Analysis, i: int, d: var Diagnostics) =
         let common = a.first[e.inner] * a.follow[e]
         if common.len > 0:
           let what = if e.kind == ekOpt: "the optional element" else: "another iteration of the loop"
-          d.error(e.pos, "rule '" & r.name & "' is not LL(1): " & a.tokenList(common) &
+          d.warning(e.pos, "rule '" & r.name & "' is not LL(1): " & a.tokenList(common) &
             (if common.len == 1: " can" else: " can each") & " start " & what &
-            " or follow it")
+            " or follow it; trying " & what & " first")
 
 # ---- node kinds and labels ----
 

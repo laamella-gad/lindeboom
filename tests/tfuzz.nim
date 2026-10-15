@@ -1,0 +1,68 @@
+## Random input must never crash or hang a parser, interpreted or
+## generated, and both must give the same result.
+
+import std/[assertions, os, random, strutils]
+import lindeboom/[grammar, lexgen]
+import ./codegenhelpers
+
+let tmp = getTempDir() / "lindeboom_tfuzz"
+
+const inputsPerGrammar = 300
+
+let seeds = [
+  Case(grammarFile: root / "tests" / "grammars" / "features.ldb", inputs: @[
+    "let a = 1 + (b - -2); list(a, 1 + 2); type t?; raw a 1 ( ; any + ; maybe x;",
+    "calc -a ^ b * c() - [d + e]; sum 1 + 2 + 3; ;"]),
+  Case(grammarFile: root / "tests" / "grammars" / "ambiguous.ldb", inputs: @[
+    "alt a b; alt a 1; alt a; loop a, b, c; plus a . b . c; opt a = b; opt b;",
+    "ix a[b]; ix a[b:c][d]; ix a[b[c]:d];"]),
+  Case(grammarFile: root / "examples" / "calc" / "calc.ldb", inputs: @[
+    "1 + 2 * (3 - 4) / -5"]),
+  Case(grammarFile: root / "examples" / "json" / "json.ldb", inputs: @[
+    "{\"a\": [1, true, null, {}], \"b\": \"\\u00e9\", \"c\": -1.5e3}"]),
+  Case(grammarFile: root / "examples" / "minipy" / "minipy.ldb", inputs: @[
+    "x = f(1); g(x, -a ** 2 + b[1] * c(d, e))\nreturn x\npass; pass\n"])]
+
+proc pieces(t: LexerTables, inputs: seq[string]): seq[string] =
+  ## The text of every token in `inputs`.
+  for input in inputs:
+    var d = Diagnostics(filename: "seed")
+    for tok in tokenize[int](t, input, d):
+      if tok.stop > tok.start: result.add tok.text(input)
+
+proc tokenSoup(r: var Rand, pieces: seq[string]): string =
+  ## Up to 30 random tokens.
+  for _ in 0 ..< r.rand(30):
+    result.add r.sample(pieces)
+    result.add r.sample([" ", " ", "", "\n"])
+
+proc mutant(r: var Rand, seed: string): string =
+  ## `seed` with a few characters deleted, inserted or duplicated.
+  result = seed
+  for _ in 0 .. r.rand(3):
+    let i = r.rand(result.len)
+    case r.rand(2)
+    of 0:
+      if i < result.len: result.delete(i .. i)
+    of 1: result.insert($r.sample(seed & "()[]{},;:=+-*/^.?!\"'#$\n\t"), i)
+    else: result.insert(result[i .. min(i + r.rand(8), result.len - 1)], i)
+
+block fuzz_parsers_never_crash_and_agree:
+  var r = initRand(20261015)
+  for c in seeds:
+    let dir = tmp / c.grammarFile.splitFile.name
+    let a = generate(c, dir, standalone = false)
+    var (g, d) = loadGrammar(readFile(c.grammarFile), c.grammarFile)
+    let t = buildLexer(g, a.v, d)
+    let ps = pieces(t, c.inputs)
+    var inputs: seq[string]
+    for i in 0 ..< inputsPerGrammar:
+      if i mod 2 == 0: inputs.add r.tokenSoup(ps)
+      else: inputs.add r.mutant(r.sample(c.inputs))
+    let got = runDriver(compile(dir, standalone = false), dir, inputs)
+    for i, input in inputs:
+      let expected = interpreted(a, t, input)
+      doAssert got[i] == expected, c.grammarFile & " " & input.escape & ":\n" & got[i] &
+        "\nexpected:\n" & expected
+
+removeDir(tmp)
