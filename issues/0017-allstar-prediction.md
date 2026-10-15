@@ -82,4 +82,5 @@ the interpreter and generated parsers.
       `tests/grammars/ambiguous.ldb`, MiniPy; a nested ambiguous grammar
       that is exponential with backtracking runs in linear time; `tfuzz`
       keeps interpreter and generated parsers in agreement
-- [ ] `docs/DESIGN.md` updated (the parser bullet in section 4)
+- [ ] `README.md` updated (prediction, the parser bullet under Design, the
+      "not LL(1)" warning)
