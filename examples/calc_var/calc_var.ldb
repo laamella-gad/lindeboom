@@ -1,0 +1,25 @@
+// An integer calculator with variables, after plzoo's calc_var
+// (https://github.com/andrejbauer/plzoo/tree/master/src/calc_var).
+//
+// A command is a definition or an expression. Both can start with a
+// variable, so `toplevel` is not LL(1): the definition is tried first, and
+// the expression when there is no '=' after the variable.
+grammar CalcVar;
+
+toplevel   : name=VARIABLE '=' value=expression EOF  # definition
+           | value=expression EOF                    # evaluation
+           ;
+
+// Earlier alternatives bind tighter: unary minus is above '*' and '/'
+// (plzoo's `%prec UMINUS`), which are above '+' and '-'.
+expression : '-' operand=expression                                # negate
+           | left=expression op=('*' | '/') right=expression       # times
+           | left=expression op=('+' | '-') right=expression       # plus
+           | VARIABLE                                              # variable
+           | NUMERAL                                               # numeral
+           | '(' expression ')'                                    # paren
+           ;
+
+NUMERAL  : [0-9]+ ;
+VARIABLE : [a-zA-Z]+ [a-zA-Z0-9]* ;
+WS       : [ \t\r\n]+ -> skip ;

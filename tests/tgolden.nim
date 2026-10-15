@@ -39,6 +39,9 @@ block golden_calc:
 block golden_json:
   checkGolden(root / "examples" / "json" / "json.ldb")
 
+block golden_calc_var:
+  checkGolden(root / "examples" / "calc_var" / "calc_var.ldb")
+
 block golden_front_end:
   # the front end parses its own grammar and generates itself
   checkGolden(root / "src" / "lindeboom" / "grammar" / "ldb.ldb")
@@ -50,6 +53,50 @@ block example_calc:
   doAssert execCmdEx(exe & " '2 * -3 / 4'") == ("-1.5\n", 0)
   doAssert execCmdEx(exe & " '1 +'") ==
     ("expression:1:4: error: expected '-', '(' or NUMBER but found end of input\n", 1)
+
+block example_calc_var:
+  # the session in plzoo's example.calc_var, then more
+  let exe = build(root / "examples" / "calc_var" / "calc_var.nim")
+  let session = """
+2+2
+x=10
+y=x+20
+3 * x + 7
+z
+x=20
+x + y
+x / 0
+
+-2 * 3 - -4
+- x * 2 + 1
+2 - 3 - 4
+7 / -2
+(1 + 2) * 3
+x2 = x * x
+x2
+99999999999999999999
+x =
+1 $ 2
+"""
+  let (output, code) = execCmdEx(quoteShell(exe), input = session)
+  doAssert code == 0, output
+  doAssert output == """
+4
+37
+Error: unknown variable z
+50
+Error: division by zero
+-2
+-39
+-5
+-3
+9
+400
+Error: numeral 99999999999999999999 is too large
+Error: column 4: expected '-', '(', NUMERAL or VARIABLE but found end of input
+Error: column 3: unexpected character '$'
+Error: column 5: expected end of input but found NUMERAL
+""", output
 
 block example_json:
   let exe = build(root / "examples" / "json" / "pretty.nim")

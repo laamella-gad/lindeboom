@@ -18,6 +18,8 @@ let seeds = [
     "ix a[b]; ix a[b:c][d]; ix a[b[c]:d];"]),
   Case(grammarFile: root / "examples" / "calc" / "calc.ldb", inputs: @[
     "1 + 2 * (3 - 4) / -5"]),
+  Case(grammarFile: root / "examples" / "calc_var" / "calc_var.ldb", inputs: @[
+    "x = -(y + 2) * 3 / z - 4", "x * -y + 1"]),
   Case(grammarFile: root / "examples" / "json" / "json.ldb", inputs: @[
     "{\"a\": [1, true, null, {}], \"b\": \"\\u00e9\", \"c\": -1.5e3}"]),
   Case(grammarFile: root / "examples" / "minipy" / "minipy.ldb", inputs: @[
