@@ -9,10 +9,14 @@ type
   Parser = ParserState[int, int, int]
 
 proc candidates(a: Analysis, p: var Parser, alts: seq[GExpr]): seq[int] =
-  ## The alternatives that the current token can start, in order.
+  ## The alternatives that the current token can start, in order. When it
+  ## only follows them, what could have started one is expected there too.
+  var first: TokenSet
   for i, alt in alts:
     if p.peek in a.predict(alt): result.add i
+    first.incl a.first(alt)
   if result.len == 0: p.fail(a.expected(alts))
+  elif p.peek notin first: p.expect(first)
 
 proc runRule(a: Analysis, p: var Parser, r: int, prec = 0): Node
 
@@ -59,6 +63,8 @@ proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
       if p.peek in a.first(e.inner):
         if a.isAmbiguous(e): discard a.attempt(p, n, e.inner, label)
         else: a.run(p, n, e.inner, label)
+      else:
+        p.expect(a.first(e.inner))
     of ekStar:
       a.runLoop(p, n, e, label)
     of ekPlus:

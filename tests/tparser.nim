@@ -84,11 +84,12 @@ grammar G;
 a : b ) ;
 c : d
 """)
-  doAssert msgs == @["2:7: error: expected ';', '|', '#', '->', '(', '.', '~', ID, " &
-    "STRING or CHARSET but found ')'", "4:1: error: expected ';' but found end of input"], $msgs
+  const continuing = "';', '=', '|', '#', '->', '(', '.', '~', '?', '*', '+', ID, STRING or CHARSET"
+  doAssert msgs == @["2:7: error: expected " & continuing & " but found ')'",
+    "4:1: error: expected " & continuing & " but found end of input"], $msgs
   doAssert "a : 'x' ;".hasMessage("1:1: error: expected 'grammar' but found ID")
   doAssert "grammar G; a : ('x' # l) ;".hasMessage(
-    "1:21: error: expected '|', '(', ')', '.', '~', ID, STRING or CHARSET but found '#'")
+    "1:21: error: expected '|', '(', ')', '..', '.', '~', '?', '*', '+', ID, STRING or CHARSET but found '#'")
   doAssert "grammar G; A : 'abc ;".hasMessage("1:16: error: unexpected character '\\''")
 
 block parser_identifier_checks:

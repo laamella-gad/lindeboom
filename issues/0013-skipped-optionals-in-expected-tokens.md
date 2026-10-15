@@ -1,7 +1,7 @@
 ---
 id: 13
 title: Skipped optional elements missing from "expected" in syntax errors
-status: open
+status: done
 labels: [diagnostics]
 ---
 
@@ -31,10 +31,35 @@ check `p.peek in first(x)` that decides to skip `x` doesn't record
 alternatives are not in the message. The runtime's `expect` already merges
 expected sets at the farthest token, so recording them is enough.
 
-- [ ] Record the first set of every optional element, `*`/`+` loop
+- [x] Record the first set of every optional element, `*`/`+` loop
       continuation and optional block as expected when it is skipped at the
       current token
-- [ ] Same in the interpreter (`lindeboom parse`) and generated parsers;
+- [x] Same in the interpreter (`lindeboom parse`) and generated parsers;
       regenerate the examples and the ldb front end
-- [ ] Tests in `tparsegen`, including a skipped optional inside a nested
+- [x] Tests in `tparsegen`, including a skipped optional inside a nested
       rule (`dataType`'s `[` above, after the rule has returned)
+
+Notes:
+
+- Recorded only when an element is skipped, so the hot path (the element
+  is there) costs nothing extra:
+  - `x?`: an `else: p.expect(first(x))` in generated code, the same in the
+    interpreter.
+  - `*`/`+` loops: the runtime's `more` expects `first` whenever the loop
+    ends.
+  - Decisions with an empty alternative (`(a | b | )`, rule alternatives):
+    a token that only follows the alternatives expects the union of their
+    FIRST sets. Generated `case` statements split such tokens into their own
+    `of` branch with a `p.expect(...)`.
+- Messages now list every token that could have gone on, as ANTLR does, so
+  some are long: after an element in an `.ldb` rule they include `'?'`,
+  `'*'`, `'+'`, `'='` (a label) and `'..'` (a range). `tparser` changed
+  accordingly.
+- `$c000 byte byte` in the `.flo` grammar now gives `expected 'noreturn',
+  'export', '{', '[', '(', ID or NL but found 'byte'`. Tokens are listed by
+  kind (literals in order of appearance, then named tokens), not in grammar
+  order.
+- `examples/flo` is a `tfuzz` seed now, so its many optionals are checked to
+  give the same messages in generated parsers as in the interpreter.
+- Only `json_parser.nim` and `ldb_parser.nim` changed on regeneration; calc
+  and calc_var have no `?` or empty alternatives.

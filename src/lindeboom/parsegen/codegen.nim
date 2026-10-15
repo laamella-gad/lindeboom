@@ -124,15 +124,25 @@ proc genDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string], label: string
     indent: int) =
   ## `case p.peek` choosing between `alts`; a non-empty `kinds[i]` starts a
   ## new node of that kind for alternative i.
+  ## Tokens that only follow the alternatives expect what could have started
+  ## one.
   var sets: seq[TokenSet]
-  var all: TokenSet
+  var all, first: TokenSet
   for alt in alts:
     sets.add g.a.predict(alt)
     all.incl sets[^1]
+    first.incl g.a.first(alt)
   g.line(indent, "case p.peek")
   for (cands, tokens) in groups(sets):
-    g.wrapped(indent, "of ", g.idents(tokens), ":")
-    g.genCandidates(alts, kinds, cands, label, indent + 1)
+    let starting = tokens * first
+    let following = tokens - first
+    if starting.len > 0:
+      g.wrapped(indent, "of ", g.idents(starting), ":")
+      g.genCandidates(alts, kinds, cands, label, indent + 1)
+    if following.len > 0:
+      g.wrapped(indent, "of ", g.idents(following), ":")
+      if first.len > 0: g.wrapped(indent + 1, "p.expect({", g.idents(first), "})")
+      g.genCandidates(alts, kinds, cands, label, indent + 1)
   if all.len < g.a.v.tokens.len:
     g.line(indent, "else:")
     g.wrapped(indent + 1, "p.fail({", g.idents(g.a.expected(alts)), "})")
@@ -177,6 +187,8 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
         g.line(indent + 2, "p.reset(result, m)")
       else:
         g.genBody(e.inner, label, indent + 1)
+      g.line(indent, "else:")
+      g.wrapped(indent + 1, "p.expect({", g.idents(g.a.first(e.inner)), "})")
     of ekStar:
       g.genMore(e, "while ", ":", indent)
       g.genIteration(e, label, indent + 1)

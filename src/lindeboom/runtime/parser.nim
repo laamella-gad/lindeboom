@@ -272,10 +272,11 @@ proc more*[K, L, T, S](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
   ## `follow` goes on. Unless speculating, a token in neither is an error:
   ## tokens are skipped into an error node added to `n` until one that is,
   ## or that can follow a rule being parsed. EOF just ends the loop, so
-  ## `follow` need not have the EOF that can follow a start rule.
+  ## `follow` need not have the EOF that can follow a start rule. When the
+  ## loop ends, `first` is expected at the current token.
   result = p.peek in first
+  if not result: p.expect(first)
   if not result and p.peek notin follow and p.peek != T(0) and p.speculating == 0:
-    p.expect(first)
     p.expect(follow)
     p.report()
     let err = p.errorNode

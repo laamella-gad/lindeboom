@@ -62,6 +62,8 @@ proc ruleValue(p: var Parser): Node =
         while p.more(result, {tkComma}, {tkRBrace}):
           p.match(result, tkComma)
           result.add(rulePair(p), lbMembers)
+      else:
+        p.expect({tkSTRING})
       p.match(result, tkRBrace)
     of tkLBracket:
       result = p.newNode(nkArray)
@@ -72,6 +74,9 @@ proc ruleValue(p: var Parser): Node =
         while p.more(result, {tkComma}, {tkRBracket}):
           p.match(result, tkComma)
           result.add(ruleValue(p), lbElements)
+      else:
+        p.expect({tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
+            tkNUMBER})
       p.match(result, tkRBracket)
     of tkSTRING:
       result = p.newNode(nkString)

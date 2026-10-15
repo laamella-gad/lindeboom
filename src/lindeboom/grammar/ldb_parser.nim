@@ -147,6 +147,8 @@ proc ruleTokens(p: var Parser): Node =
     p.match(result, tkTOKENS)
     if p.peek in {tkID}:
       result.add(ruleTokenNames(p))
+    else:
+      p.expect({tkID})
     p.match(result, tkRBrace)
   except SyntaxError:
     p.recover(result)
@@ -162,6 +164,10 @@ proc ruleTokenNames(p: var Parser): Node =
       p.match(result, tkComma)
       if p.peek in {tkID}:
         result.add(ruleTokenNames(p))
+      else:
+        p.expect({tkID})
+    else:
+      p.expect({tkComma})
   except SyntaxError:
     p.recover(result)
   p.leave()
@@ -219,6 +225,8 @@ proc ruleRule(p: var Parser): Node =
   try:
     if p.peek in {tkFragment}:
       p.match(result, tkFragment)
+    else:
+      p.expect({tkFragment})
     p.match(result, tkID, lbName)
     p.match(result, tkColon)
     result.add(ruleRuleAlt(p))
@@ -237,18 +245,24 @@ proc ruleRuleAlt(p: var Parser): Node =
   try:
     if p.peek in {tkLt}:
       result.add(ruleAssoc(p))
+    else:
+      p.expect({tkLt})
     while p.more(result, {tkLParen, tkDot, tkTilde, tkID, tkSTRING, tkCHARSET},
         {tkSemi, tkPipe, tkHash, tkMinusGt}):
       result.add(ruleElement(p))
     if p.peek in {tkHash}:
       p.match(result, tkHash)
       p.match(result, tkID, lbAltLabel)
+    else:
+      p.expect({tkHash})
     if p.peek in {tkMinusGt}:
       p.match(result, tkMinusGt)
       result.add(ruleCommand(p))
       while p.more(result, {tkComma}, {tkSemi, tkPipe}):
         p.match(result, tkComma)
         result.add(ruleCommand(p))
+    else:
+      p.expect({tkMinusGt})
   except SyntaxError:
     p.recover(result)
   p.leave()
@@ -277,6 +291,8 @@ proc ruleCommand(p: var Parser): Node =
       p.match(result, tkLParen)
       p.match(result, tkID, lbArg)
       p.match(result, tkRParen)
+    else:
+      p.expect({tkLParen})
   except SyntaxError:
     p.recover(result)
   p.leave()
@@ -292,13 +308,19 @@ proc ruleElement(p: var Parser): Node =
       if p.peek in {tkEq}:
         p.match(result, tkEq)
         result.add(ruleAtom(p))
+      else:
+        p.expect({tkEq})
       if p.peek in {tkQuestion, tkStar, tkPlus}:
         result.add(ruleSuffix(p))
+      else:
+        p.expect({tkQuestion, tkStar, tkPlus})
     of tkLParen, tkDot, tkTilde, tkSTRING, tkCHARSET:
       result = p.newNode(nkPlainElement)
       result.add(rulePrimary(p))
       if p.peek in {tkQuestion, tkStar, tkPlus}:
         result.add(ruleSuffix(p))
+      else:
+        p.expect({tkQuestion, tkStar, tkPlus})
     else:
       p.fail({tkLParen, tkDot, tkTilde, tkID, tkSTRING, tkCHARSET})
   except SyntaxError:
@@ -332,6 +354,8 @@ proc rulePrimary(p: var Parser): Node =
       if p.peek in {tkDotDot}:
         p.match(result, tkDotDot)
         p.match(result, tkSTRING)
+      else:
+        p.expect({tkDotDot})
     of tkCHARSET:
       result = p.newNode(nkCharSet)
       p.match(result, tkCHARSET)
@@ -376,6 +400,8 @@ proc ruleSuffix(p: var Parser): Node =
     p.matchSet(result, {tkQuestion, tkStar, tkPlus}, lbOp)
     if p.peek in {tkQuestion}:
       p.match(result, tkQuestion, lbLazy)
+    else:
+      p.expect({tkQuestion})
   except SyntaxError:
     p.recover(result)
   p.leave()

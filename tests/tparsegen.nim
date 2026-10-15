@@ -60,7 +60,7 @@ block parsegen_ebnf:
     ├── 'b'
     └── INT "2"
     """)
-  expectError(rules, "a x", "1:4: expected 'b' but found end of input")
+  expectError(rules, "a x", "1:4: expected 'b' or ID but found end of input")
 
 block parsegen_nested_alternatives:
   let rules = "s : ('a' ID | 'b' INT | ) ';' ;"
@@ -329,6 +329,20 @@ block parsegen_precedence_expected:
   # also after an operand that binds tighter, as the right side of '*'
   expectError("s : e ';' ;\n" & exprRule, "a * - b c",
     "1:9: expected ';', '(', '^', '-', '*', '/' or '+' but found ID")
+
+block parsegen_skipped_optionals_expected:
+  # what skipped optional elements could have started is in the message
+  let rules = "s : a NL ;\na : ID t=type? name=ID? args? ('export' INT)? '{'? ;\n" &
+    "type : 'byte' ('[' INT? ']')? ;\nargs : '(' ')' ;\nNL : ';' ;"
+  expectError(rules, "x byte byte",
+    "1:8: expected 'export', '{', '[', '(', NL or ID but found 'byte'", "s")
+  expectError(rules, "x y 1",
+    "1:5: expected 'export', '{', '(' or NL but found INT", "s")
+  # loops that end, and decisions that take an empty alternative
+  expectError("s : ID* INT? ';' ;", "x 1 x", "1:5: expected ';' but found ID")
+  expectError("s : ID* INT? ';' ;", "x x", "1:4: expected ';', ID or INT but found end of input")
+  expectError("s : ('a' | 'b' |) ';' ;", "c", "1:1: expected 'a', 'b' or ';' but found ID")
+  expectError("s : ID+ ';' ;", "x 1", "1:3: expected ';' or ID but found INT")
 
 block parsegen_left_recursion:
   # left recursion through another rule, or not at the start of an
