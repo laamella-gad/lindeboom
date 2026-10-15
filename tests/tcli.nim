@@ -20,7 +20,7 @@ block cli_check_ok:
 block cli_check_reports_analysis_errors:
   let (output, code) = run("check " & quoteShell(root / "examples" / "minipy" / "minipy.ldb"))
   doAssert code == 1, output
-  doAssert "error: rule 'expr' is left-recursive" in output, output
+  doAssert "error: rule 'smallStmt' is not LL(1)" in output, output
 
 block cli_check_errors:
   let f = getTempDir() / "lindeboom_tcli_bad.ldb"

@@ -23,7 +23,7 @@ proc decide(a: Analysis, p: Parser, alts: seq[GExpr]): int =
     all.incl s
   if result < 0: a.fail(p, all)
 
-proc runRule(a: Analysis, p: var Parser, r: int): Node
+proc runRule(a: Analysis, p: var Parser, r: int, prec = 0): Node
 
 proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
   let label = if e.label.len > 0: a.labelIndex[e.label] else: label
@@ -45,7 +45,7 @@ proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
       a.run(p, n, e.inner, label)
       while p.peek in a.first(e.inner): a.run(p, n, e.inner, label)
     of ekRuleRef:
-      n.add(a.runRule(p, a.ruleIndex[e.name]), label)
+      n.add(a.runRule(p, a.ruleIndex[e.name], a.operandPrec.getOrDefault(e)), label)
     of ekLiteral, ekTokenRef:
       let k = a.tokenKind(e)
       if p.peek != k: a.fail(p, [k].toPackedSet)
@@ -53,13 +53,30 @@ proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
     else:
       raiseAssert "not a parser element: " & $e.kind
 
-proc runRule(a: Analysis, p: var Parser, r: int): Node =
+func loopAlt(a: Analysis, p: Parser, r: int): int =
+  ## The binary or suffix alternative of rule `r` selected by the current
+  ## token, -1 if none.
+  result = -1
+  for k, alt in a.g.rules[r].alts:
+    if a.isLoopAlt(r, k) and p.peek in a.continuation(alt.body): result = k
+
+proc runRule(a: Analysis, p: var Parser, r: int, prec = 0): Node =
   let alts = a.g.rules[r].alts
+  var heads: seq[int]
   var bodies: seq[GExpr]
-  for alt in alts: bodies.add alt.body
-  let i = if alts.len == 1: 0 else: a.decide(p, bodies)
+  for k in 0 .. alts.high:
+    if not a.isLoopAlt(r, k): heads.add k
+  for k in heads: bodies.add alts[k].body
+  let i = heads[if heads.len == 1: 0 else: a.decide(p, bodies)]
   result = p.newNode(a.altKinds[r][i])
-  a.run(p, result, bodies[i], 0)
+  a.run(p, result, alts[i].body, 0)
+  var k = a.loopAlt(p, r)
+  while k >= 0 and a.precedence(r, k) >= prec:
+    let items = alts[k].body.items
+    let label = if items[0].label.len > 0: a.labelIndex[items[0].label] else: 0
+    result = p.wrap(result, a.altKinds[r][k], label)
+    for x in items[1 .. ^1]: a.run(p, result, x, 0)
+    k = a.loopAlt(p, r)
 
 func treeNames*(a: Analysis): TreeNames =
   result = TreeNames(kinds: a.kinds, labels: a.labels)

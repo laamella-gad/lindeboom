@@ -15,7 +15,9 @@ let cases = [
   Case(grammarFile: root / "tests" / "grammars" / "features.ldb", inputs: @[
     "", "let a = 1 + (b - -2);", "list(); list(a, 1 + 2);", "type t?; type u;",
     "raw a 1 ( ; any + ; maybe x; maybe; ;", "let a = 1 # comment\n;",
-    "let = 1;", "list(a,);", "raw ;", "type t", "let a = 1; $"]),
+    "let = 1;", "list(a,);", "raw ;", "type t", "let a = 1; $",
+    "calc a - b - c * d ^ e ^ f;", "calc -a ^ b * c() - [d + e];", "calc a()();",
+    "calc a + ;", "calc a ^;", "sum 1 + 2 + 3;", "sum 1 +;"]),
   Case(grammarFile: root / "examples" / "calc" / "calc.ldb", inputs: @[
     "1 + 2 * (3 - 4)", "-1", "1 +", "(1"]),
   Case(grammarFile: root / "examples" / "json" / "json.ldb", inputs: @[

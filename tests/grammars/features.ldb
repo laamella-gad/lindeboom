@@ -8,11 +8,22 @@ item  : 'let' name=ID '=' value=expr ';'                 # let
       | 'raw' (~';')+ ';'                                # raw
       | 'any' . ';'                                      # any
       | 'maybe' maybe ';'                                # opt
+      | 'calc' calc ';'                                  # calcItem
+      | 'sum' sum ';'                                    # sumItem
       | ';'                                              # empty
       ;
 maybe : 'x' | ;
 expr  : atom (op=('+' | '-') atom)* ;
 atom  : ID | INT | '(' expr ')' | '-' INT ;
+calc  : calc '(' ')'                                     # call
+      | <assoc=right> left=calc '^' right=calc           # pow
+      | '-' calc                                         # neg
+      | left=calc op=('*' | '/') right=calc              # mul
+      | left=calc op=('+' | '-') right=calc              # add
+      | ID                                               # name
+      | '[' calc ']'                                     # bracket
+      ;
+sum   : sum '+' INT | INT ;
 
 ID      : [a-z]+ ;
 INT     : [0-9]+ ;

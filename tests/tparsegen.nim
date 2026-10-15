@@ -1,4 +1,5 @@
 import std/[assertions, strutils]
+import lindeboom/[grammar, lexgen, parsegen]
 import ./parsehelpers
 
 const lexer = """
@@ -179,8 +180,83 @@ block parsegen_conflicts:
     "ID and INT can each start the optional element or follow it")
   doAssert problems(g("s : ID (',' ID)* ';'? ;")).len == 0
 
+const exprRule = """
+e : e '(' ')'                       # call
+  | <assoc=right> left=e '^' right=e  # pow
+  | '-' e                           # neg
+  | left=e op=('*' | '/') right=e   # mul
+  | left=e op=('+' | '-') right=e   # add
+  | ID                              # name
+  | '(' e ')'                       # paren
+  ;
+"""
+
+proc shape(input: string): string =
+  ## The tree of `input` with `exprRule`, as a parenthesized expression.
+  let (a, t, _) = analyzed(g(exprRule))
+  var d: Diagnostics
+  let n = a.interpret(tokenize[int](t, input, d), input, 0, d)
+  doAssert not d.hasErrors, $d.items
+  proc show(n: Node): string =
+    let kind = a.kinds[n.kind]
+    case kind
+    of "name": n.text
+    of "paren": show(n[1])
+    of "neg": "(-" & show(n[1]) & ")"
+    of "call": show(n[0]) & "()"
+    else: "(" & show(n[0]) & " " & n[1].text & " " & show(n[2]) & ")"
+  show(n)
+
+block parsegen_precedence:
+  doAssert shape("a + b * c") == "(a + (b * c))"
+  doAssert shape("a * b + c") == "((a * b) + c)"
+  doAssert shape("a - b - c") == "((a - b) - c)"
+  doAssert shape("a ^ b ^ c") == "(a ^ (b ^ c))"
+  doAssert shape("a * b ^ c") == "(a * (b ^ c))"
+  # prefix operands take the operators that bind tighter than the prefix
+  doAssert shape("-a ^ b") == "(-(a ^ b))"
+  doAssert shape("-a * b") == "((-a) * b)"
+  doAssert shape("-a()") == "(-a())"
+  doAssert shape("a()() + (b - c)") == "(a()() + (b - c))"
+
+block parsegen_precedence_tree:
+  expectTree(exprRule, "a * b()", """
+    mul
+    ├── left: name
+    │   └── ID "a"
+    ├── op: '*'
+    └── right: call
+        ├── name
+        │   └── ID "b"
+        ├── '('
+        └── ')'
+    """)
+  # an unlabelled rule makes a node of the rule's kind per operator
+  expectTree("e : e '+' e | INT ;", "1 + 2", """
+    e
+    ├── e
+    │   └── INT "1"
+    ├── '+'
+    └── e
+        └── INT "2"
+    """)
+  expectError(exprRule, "a +", "1:4: expected '(', '-' or ID but found end of input")
+  expectError(exprRule, "a b", "1:3: expected end of input but found ID")
+
+block parsegen_precedence_errors:
+  expectProblem("e : e '+' e ;", "rule 'e' needs an alternative that does not start with 'e'")
+  expectProblem("e : e '+' INT | ;", "left-recursive rule 'e' can match empty input")
+  expectProblem("e : e '+'? | INT ;",
+    "rule 'e': alternative 1 can match empty input after the leading 'e'")
+  expectProblem("e : e '+' INT | e '+' ID | INT ;",
+    "rule 'e' is not LL(1): alternatives 1 and 2 can both continue 'e' with '+'")
+  expectProblem("e : e '+' INT | ID | ID INT ;",
+    "rule 'e' is not LL(1): alternatives 2 and 3 can both start with ID")
+
 block parsegen_left_recursion:
-  expectProblem("e : e '+' INT | INT ;", "2:1: error: rule 'e' is left-recursive: e -> e")
+  # left recursion through another rule, or not at the start of an
+  # alternative, is not rewritten
+  expectProblem("e : (e) '+' INT | INT ;", "2:1: error: rule 'e' is left-recursive: e -> e")
   expectProblem("a : b ID ;\nb : c? a | INT ;\nc : '-' ;",
     "rule 'a' is left-recursive: a -> b -> a")
   expectProblem("a : b ID ;\nb : c? a | INT ;\nc : '-' ;",

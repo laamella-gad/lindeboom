@@ -98,30 +98,55 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
       g.wrapped(indent + 1, "if p.peek notin {", g.idents(g.a.first(e.inner)), "}: break")
     of ekRuleRef:
       let r = g.a.ruleIndex[e.name]
-      g.line(indent, "result.add(rule" & g.a.ruleIdents[r] & "(p)" & labelArg(label) & ")")
+      let prec =
+        if not g.a.isPrecRule[r]: ""
+        else: ", " & $g.a.operandPrec.getOrDefault(e)
+      g.line(indent, "result.add(rule" & g.a.ruleIdents[r] & "(p" & prec & ")" &
+        labelArg(label) & ")")
     of ekLiteral, ekTokenRef:
       g.line(indent, "p.match(result, " & g.a.v.tokens[g.a.tokenKind(e)].ident &
         labelArg(label) & ")")
     else:
       raiseAssert "not a parser element: " & $e.kind
 
+proc genLoop(g: var Gen, i: int) =
+  ## The binary and suffix alternatives of precedence rule `i`.
+  let r = g.a.g.rules[i]
+  g.line(1, "while true:")
+  g.line(2, "case p.peek")
+  for k, alt in r.alts:
+    if g.a.isLoopAlt(i, k):
+      let items = alt.body.items
+      g.wrapped(2, "of ", g.idents(g.a.continuation(alt.body)), ":")
+      g.line(3, "if prec > " & $g.a.precedence(i, k) & ": break")
+      let label = if items[0].label.len > 0: g.a.labelIdents[g.a.labelIndex[items[0].label]] else: ""
+      g.line(3, "result = p.wrap(result, " & g.a.kindIdents[g.a.altKinds[i][k]] &
+        labelArg(label) & ")")
+      for x in items[1 .. ^1]: g.genExpr(x, "", 3)
+  g.line(2, "else:")
+  g.line(3, "break")
+
 proc genRule(g: var Gen, i: int) =
   let r = g.a.g.rules[i]
   let labelled = r.alts[0].label.len > 0
-  g.line(0, "proc rule" & g.a.ruleIdents[i] & "(p: var Parser): Node =")
+  let prec = g.a.isPrecRule[i]
+  g.line(0, "proc rule" & g.a.ruleIdents[i] & "(p: var Parser" &
+    (if prec: ", prec: int" else: "") & "): Node =")
   g.line(1, "## `" & r.name & "`, line " & $r.pos.line)
   var kinds: seq[string]
-  for k in g.a.altKinds[i]:
-    kinds.add(if labelled: g.a.kindIdents[k] else: "")
+  var heads: seq[GExpr]
+  for k, alt in r.alts:
+    if not g.a.isLoopAlt(i, k):
+      kinds.add(if labelled: g.a.kindIdents[g.a.altKinds[i][k]] else: "")
+      heads.add alt.body
   if not labelled:
     g.line(1, "result = p.newNode(" & g.a.kindIdents[g.a.altKinds[i][0]] & ")")
-  if r.alts.len == 1:
+  if heads.len == 1:
     if labelled: g.line(1, "result = p.newNode(" & kinds[0] & ")")
-    g.genBody(r.alts[0].body, "", 1)
+    g.genBody(heads[0], "", 1)
   else:
-    var bodies: seq[GExpr]
-    for alt in r.alts: bodies.add alt.body
-    g.genDecision(bodies, kinds, "", 1)
+    g.genDecision(heads, kinds, "", 1)
+  if prec: g.genLoop(i)
   g.s.add "\n"
 
 proc genParserModule*(a: Analysis, grammarFile: string,
@@ -151,7 +176,8 @@ proc genParserModule*(a: Analysis, grammarFile: string,
   if a.labels.len > 1: g.s.add "\n"
 
   for i in a.parserRules:
-    g.line(0, "proc rule" & a.ruleIdents[i] & "(p: var Parser): Node")
+    g.line(0, "proc rule" & a.ruleIdents[i] & "(p: var Parser" &
+      (if a.isPrecRule[i]: ", prec: int" else: "") & "): Node")
   g.s.add "\n"
   for i in a.parserRules: g.genRule(i)
 
@@ -168,5 +194,9 @@ proc parseWith(src, filename: string,
     g.s.add "\nproc parse" & a.ruleIdents[i] &
       "*(src: string, filename = \"input\"): ParseResult[Node] =\n"
     g.line(1, "## Parses `src` with rule `" & r.name & "`.")
-    g.line(1, "parseWith(src, filename, rule" & a.ruleIdents[i] & ")")
+    if a.isPrecRule[i]:
+      g.line(1, "parseWith(src, filename, proc (p: var Parser): Node = rule" &
+        a.ruleIdents[i] & "(p, 0))")
+    else:
+      g.line(1, "parseWith(src, filename, rule" & a.ruleIdents[i] & ")")
   g.s

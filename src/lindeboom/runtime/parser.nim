@@ -144,6 +144,13 @@ proc add*[K, L, T](n, son: ParseNode[K, L, T], label = L(0)) =
   son.label = label
   n.sons.add son
 
+proc wrap*[K, L, T](p: ParserState[K, L, T], left: ParseNode[K, L, T], kind: K,
+    label = L(0)): ParseNode[K, L, T] =
+  ## A new node of `kind` with `left` as its first son, for an operator that
+  ## follows the expression `left`.
+  result = p.newNode(kind)
+  result.add(left, label)
+
 proc take*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     label = L(0)) =
   ## Adds the current token to `n` and moves past it. EOF is not added and

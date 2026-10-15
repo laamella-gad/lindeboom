@@ -2,12 +2,24 @@
 ## left recursion, conflicts, and the node kinds and labels of the tree.
 ##
 ## Every rule can be a start rule, so every rule can be followed by EOF.
+##
+## A rule with an alternative that starts with the rule itself is a
+## precedence rule, parsed by precedence climbing as in ANTLR 4: its
+## primary and prefix alternatives start an expression, its binary and
+## suffix alternatives extend it. Alternative k of n has precedence n - k,
+## so earlier alternatives bind tighter.
 
 import std/[algorithm, hashes, packedsets, sets, tables]
 import ../runtime/diagnostics, ../grammar/[ast, idents, vocabulary]
 
 type
   TokenSet* = PackedSet[int]
+
+  AltShape* = enum
+    asPrimary  ## `'(' e ')'`, `ID`
+    asPrefix   ## `'-' e`
+    asBinary   ## `e '+' e`
+    asSuffix   ## `e '(' args ')'`
 
   Analysis* = object
     g*: Grammar
@@ -28,6 +40,9 @@ type
     labelIdents*: seq[string]            ## `lbNone`, `lbCond`, ...
     labelIsList*: seq[bool]              ## can label several sons of a node
     labelIndex*: Table[string, int]
+    isPrecRule*: seq[bool]               ## per rule
+    shapes*: seq[seq[AltShape]]          ## per precedence rule and alternative
+    operandPrec*: Table[GExpr, int]      ## trailing self-reference -> precedence
 
 const reservedLabels = ["kind", "label", "tok", "sons", "len", "text", "pos",
   "items", "treeRepr"]
@@ -196,6 +211,69 @@ func sortedKinds*(s: TokenSet): seq[int] =
   for k in s: result.add k
   result.sort()
 
+# ---- precedence rules ----
+
+func isSelfRef(e: GExpr, rule: string): bool =
+  e.kind == ekRuleRef and e.name == rule
+
+func precedence*(a: Analysis, r, k: int): int =
+  ## Precedence of alternative `k` of rule `r`.
+  a.g.rules[r].alts.len - k
+
+func isLoopAlt*(a: Analysis, r, k: int): bool =
+  ## A binary or suffix alternative, which extends an expression.
+  a.isPrecRule[r] and a.shapes[r][k] in {asBinary, asSuffix}
+
+func continuation*(a: Analysis, alt: GExpr): TokenSet =
+  ## FIRST of a binary or suffix alternative after its leading self-reference.
+  var i = 1
+  while i < alt.items.len:
+    result.incl a.first[alt.items[i]]
+    i = if a.nullable[alt.items[i]]: i + 1 else: alt.items.len
+
+func continuationNullable(a: Analysis, alt: GExpr): bool =
+  result = true
+  for i in 1 .. alt.items.high:
+    if not a.nullable[alt.items[i]]: result = false
+
+proc classify(a: var Analysis, d: var Diagnostics) =
+  a.isPrecRule.setLen a.g.rules.len
+  a.shapes.setLen a.g.rules.len
+  for i in a.parserRules:
+    let r = a.g.rules[i]
+    for alt in r.alts:
+      if alt.body.items.len > 0 and alt.body.items[0].isSelfRef(r.name):
+        a.isPrecRule[i] = true
+    if a.isPrecRule[i]:
+      var hasHead = false
+      for k, alt in r.alts:
+        let items = alt.body.items
+        let leading = items.len > 0 and items[0].isSelfRef(r.name)
+        let trailing = items.len > 1 and items[^1].isSelfRef(r.name)
+        let shape =
+          if leading and trailing: asBinary
+          elif leading: asSuffix
+          elif trailing: asPrefix
+          else: asPrimary
+        a.shapes[i].add shape
+        case shape
+        of asBinary:
+          let assoc = if alt.hasAssoc: alt.assoc else: assocLeft
+          a.operandPrec[items[^1]] = a.precedence(i, k) + ord(assoc == assocLeft)
+        of asPrefix:
+          a.operandPrec[items[^1]] = a.precedence(i, k)
+        of asPrimary, asSuffix:
+          discard
+        if leading and a.continuationNullable(alt.body):
+          d.error(alt.pos, "rule '" & r.name & "': alternative " & $(k + 1) &
+            " can match empty input after the leading '" & r.name & "'")
+        hasHead = hasHead or not leading
+      if not hasHead:
+        d.error(r.pos, "rule '" & r.name & "' needs an alternative that does not start with '" &
+          r.name & "'")
+      elif a.ruleNullable[i]:
+        d.error(r.pos, "left-recursive rule '" & r.name & "' can match empty input")
+
 # ---- left recursion ----
 
 proc leftRefs(a: Analysis, e: GExpr, refs: var seq[int]) =
@@ -240,10 +318,12 @@ func leftCycle(a: Analysis, calls: seq[seq[int]], start: int): seq[int] =
         queue.add c
 
 proc checkLeftRecursion(a: Analysis, d: var Diagnostics): HashSet[int] =
-  ## Reports left-recursive rules and returns them.
+  ## Reports left recursion that is not handled by precedence climbing and
+  ## returns the rules involved.
   var calls = newSeq[seq[int]](a.g.rules.len)
   for i in a.parserRules:
-    for alt in a.g.rules[i].alts: a.leftRefs(alt.body, calls[i])
+    for k, alt in a.g.rules[i].alts:
+      if not a.isLoopAlt(i, k): a.leftRefs(alt.body, calls[i])
   for i in a.parserRules:
     let cycle = a.leftCycle(calls, i)
     if cycle.len > 0:
@@ -263,25 +343,41 @@ func tokenList(a: Analysis, s: TokenSet): string =
     if i > 0: result.add(if i == kinds.high: " and " else: ", ")
     result.add a.v.tokens[k].name
 
-proc checkAlternatives(a: Analysis, rule: string, alts: seq[GExpr], what: string,
+type Choice = object
+  number: int       ## 1-based alternative number
+  pos: SourcePos
+  tokens: TokenSet  ## tokens that select it
+
+proc checkChoices(a: Analysis, rule: string, choices: seq[Choice], what: string,
     d: var Diagnostics) =
-  for j in 1 .. alts.high:
+  for j in 1 .. choices.high:
     var i = 0
     while i < j:
-      let common = a.predict(alts[i]) * a.predict(alts[j])
+      let common = choices[i].tokens * choices[j].tokens
       if common.len > 0:
-        d.error(alts[j].pos, "rule '" & rule &
-          "' is not LL(1): alternatives " & $(i + 1) & " and " & $(j + 1) & what &
-          " can both start with " & a.tokenList(common))
+        d.error(choices[j].pos, "rule '" & rule & "' is not LL(1): alternatives " &
+          $choices[i].number & " and " & $choices[j].number & what & a.tokenList(common))
         i = j
       else:
         inc i
 
-proc checkConflicts(a: Analysis, r: Rule, d: var Diagnostics) =
-  if r.alts.len > 1:
-    var bodies: seq[GExpr]
-    for alt in r.alts: bodies.add alt.body
-    a.checkAlternatives(r.name, bodies, "", d)
+proc checkAlternatives(a: Analysis, rule: string, alts: seq[GExpr], what: string,
+    d: var Diagnostics) =
+  var choices: seq[Choice]
+  for i, alt in alts:
+    choices.add Choice(number: i + 1, pos: alt.pos, tokens: a.predict(alt))
+  a.checkChoices(rule, choices, what & " can both start with ", d)
+
+proc checkConflicts(a: Analysis, i: int, d: var Diagnostics) =
+  let r = a.g.rules[i]
+  var head, loop: seq[Choice]
+  for k, alt in r.alts:
+    if a.isLoopAlt(i, k):
+      loop.add Choice(number: k + 1, pos: alt.pos, tokens: a.continuation(alt.body))
+    else:
+      head.add Choice(number: k + 1, pos: alt.pos, tokens: a.predict(alt.body))
+  a.checkChoices(r.name, head, " can both start with ", d)
+  a.checkChoices(r.name, loop, " can both continue '" & r.name & "' with ", d)
   for alt in r.alts:
     for e in alt.body.walk:
       if e.isTokenSet:
@@ -373,6 +469,7 @@ proc analyze*(g: Grammar, v: Vocabulary, d: var Diagnostics): Analysis =
   result.computeFirstSets()
   result.computeFollowSets()
   result.assignNames(d)
+  result.classify(d)
   let leftRecursive = result.checkLeftRecursion(d)
   for i in result.parserRules:
-    if i notin leftRecursive: result.checkConflicts(g.rules[i], d)
+    if i notin leftRecursive: result.checkConflicts(i, d)
