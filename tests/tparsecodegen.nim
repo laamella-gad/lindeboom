@@ -24,7 +24,9 @@ let cases = [
     "ix a[b]; ix a[b:c][d]; ix a[b[c]:d];", "ix a[b:];", "ix a[b c];"]),
   Case(grammarFile: root / "examples" / "minipy" / "minipy.ldb", inputs: @[
     "x = f(1); g(x);\n", "return\n", "x = -a ** 2 + b[1] * c(d, e)\n", "x = \n",
-    "f(1)(2) = 3\n", "pass; pass\n"])]
+    "f(1)(2) = 3\n", "pass; pass\n",
+    "def f(n):\n    if n < 2:\n        return 1\n    elif n:\n        pass\n    else: return [\n" &
+      "  n\n]\n\nwhile x: x = x - 1\n", "if x:\n    y\n  z\n", "if x:\ny\n"])]
 
 block parsecodegen_matches_interpreter:
   for c in cases:

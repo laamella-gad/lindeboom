@@ -21,7 +21,9 @@ let seeds = [
   Case(grammarFile: root / "examples" / "json" / "json.ldb", inputs: @[
     "{\"a\": [1, true, null, {}], \"b\": \"\\u00e9\", \"c\": -1.5e3}"]),
   Case(grammarFile: root / "examples" / "minipy" / "minipy.ldb", inputs: @[
-    "x = f(1); g(x, -a ** 2 + b[1] * c(d, e))\nreturn x\npass; pass\n"])]
+    "x = f(1); g(x, -a ** 2 + b[1] * c(d, e))\nreturn x\npass; pass\n",
+    "def f(n):\n    if n < 2:\n        return 1\n    else:\n        while n: n = n - 1\n" &
+      "    return f(\n  n)\n"])]
 
 proc pieces(t: LexerTables, inputs: seq[string]): seq[string] =
   ## The text of every token in `inputs`.

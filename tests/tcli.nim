@@ -39,7 +39,9 @@ block cli_parse_tokens:
     quoteShell(root / "examples" / "minipy" / "minipy.ldb") & " " & quoteShell(f))
   doAssert code == 0, output
   doAssert output.startsWith("1:1 'def' \"def\"\n1:5 ID \"f\"\n"), output
+  doAssert "2:5 INDENT \"\"\n2:5 'return'" in output, output
   doAssert "2:14 '**' \"**\"\n" in output, output
+  doAssert output.endsWith("3:1 DEDENT \"\"\n3:1 EOF \"\"\n"), output
   doAssert output.endsWith("3:1 EOF \"\"\n"), output
   writeFile(f, "x = $")
   let (errOutput, errCode) = run("parse --tokens " &

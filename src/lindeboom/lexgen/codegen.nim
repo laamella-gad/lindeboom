@@ -25,6 +25,12 @@ proc addList(result: var string, items: openArray[string]) =
     line.add item & " "
   result.add line.strip(leading = false)
 
+func kindList(v: Vocabulary, kinds: seq[int32]): string =
+  ## `kinds` as a Nim `seq[int32]` literal of enum values.
+  var items: seq[string]
+  for k in kinds: items.add "int32(" & v.tokens[k].ident & ")"
+  "@[" & items.join(", ") & "]"
+
 proc genLexerModule*(v: Vocabulary, t: LexerTables, grammarFile: string,
     runtimeImport = "lindeboom/runtime/lexer"): string =
   ## Source of `<name>_lexer.nim`.
@@ -54,7 +60,15 @@ proc genLexerModule*(v: Vocabulary, t: LexerTables, grammarFile: string,
   result.addList kinds
   result.add "],\n  acceptAction: @[\n"
   result.addList actions
-  result.add "])\n\n"
+  result.add "]"
+  let ind = t.indentation
+  if ind.enabled:
+    result.add ",\n  indentation: IndentConfig(enabled: true,\n"
+    result.add "    newline: int32(" & v.tokens[ind.newline].ident & "), indent: int32(" &
+      v.tokens[ind.indent].ident & "), dedent: int32(" & v.tokens[ind.dedent].ident & "),\n"
+    result.add "    opens: " & v.kindList(ind.opens) & ",\n    closes: " & v.kindList(ind.closes) & ",\n"
+    result.add "    tabs: tm" & capitalizeAscii($ind.tabs) & ", tabWidth: " & $ind.tabWidth & ")"
+  result.add ")\n\n"
   result.add """
 proc tokenize*(src: string, d: var Diagnostics): seq[Token] =
   ## Splits `src` into tokens, ending with `tkEOF`. Stops at the first error.

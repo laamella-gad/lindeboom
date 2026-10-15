@@ -1,7 +1,7 @@
 ---
 id: 6
 title: Conflict fallback
-status: in-progress
+status: done
 labels: [milestone, parser]
 milestone: 6
 ---
@@ -13,7 +13,7 @@ warn at generation time. No error recovery (non-goal for v1).
 - [x] Generation-time warning naming the rule and the overlapping tokens
 - [ ] Optional memoization
 - [x] Fuzz generated parsers: random input must never crash or hang
-- [ ] MiniPy example works end to end
+- [x] MiniPy example works end to end
 
 Notes:
 
@@ -37,5 +37,6 @@ Notes:
   grammar (features, ambiguous, calc, JSON, MiniPy); the generated parser
   must exit cleanly and agree with the interpreter. Very deep nesting can
   still overflow the stack; there is no depth limit.
-- MiniPy end to end waits for the indentation filter (issue 3). Its check
-  passes with two warnings and single-line statements parse.
+- MiniPy works end to end since the indentation filter (issue 3); its check
+  passes with two warnings. MiniPy programs with blocks are in the codegen
+  comparison and the fuzz seeds.
