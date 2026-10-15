@@ -67,7 +67,7 @@ block recovery_missing_token:
         ├── name
         │   └── ID "a"
         └── ';'
-    1:11: expected ')' but found ';'
+    1:11: expected '+' or ')' but found ';'
     """)
 
 block recovery_one_error_per_statement:
@@ -88,8 +88,8 @@ block recovery_one_error_per_statement:
         ├── num
         │   └── INT "3"
         └── ';'
-    1:9: expected ';' but found 'print'
-    1:17: expected ';' but found 'print'
+    1:9: expected ';' or '+' but found 'print'
+    1:17: expected ';' or '+' but found 'print'
     """)
 
 block recovery_loop_skips_tokens:
@@ -122,7 +122,7 @@ block recovery_end_of_input:
         ├── num
         │   └── INT "1"
         └── error
-    1:6: expected ';' but found end of input
+    1:6: expected ';' or '+' but found end of input
     """)
 
 block recovery_no_cascade:

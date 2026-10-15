@@ -247,6 +247,7 @@ proc genLoop(g: var Gen, i, indent: int) =
           g.line(indent + 3, "done = true")
       g.line(indent + 2, "if not done: break")
   g.line(indent + 1, "else:")
+  g.wrapped(indent + 2, "p.expect({", g.idents(g.a.loopContinuation(i)), "})")
   g.line(indent + 2, "break")
 
 proc genRule(g: var Gen, i, number: int) =

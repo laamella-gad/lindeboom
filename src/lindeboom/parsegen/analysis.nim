@@ -265,6 +265,12 @@ func continuation*(a: Analysis, alt: GExpr): TokenSet =
     result.incl a.first[alt.items[i]]
     i = if a.nullable[alt.items[i]]: i + 1 else: alt.items.len
 
+func loopContinuation*(a: Analysis, r: int): TokenSet =
+  ## The tokens that can extend an expression of precedence rule `r`: the
+  ## continuations of all its binary and suffix alternatives.
+  for k, alt in a.g.rules[r].alts:
+    if a.isLoopAlt(r, k): result.incl a.continuation(alt.body)
+
 func continuationNullable(a: Analysis, alt: GExpr): bool =
   result = true
   for i in 1 .. alt.items.high:

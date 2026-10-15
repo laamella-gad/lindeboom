@@ -104,6 +104,7 @@ proc ruleExpression(p: var Parser, prec: int): Node =
         p.matchSet(result, {tkMinus, tkPlus}, lbOp)
         result.add(ruleExpression(p, 5), lbRight)
       else:
+        p.expect({tkMinus, tkStar, tkSlash, tkPlus})
         break
   except SyntaxError:
     p.recover(result)

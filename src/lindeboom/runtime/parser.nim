@@ -190,9 +190,10 @@ proc take*[K, L, T](p: var ParserState[K, L, T], n: ParseNode[K, L, T],
     inc p.i
   p.recovering = false
 
-proc expect[K, L, T, S](p: var ParserState[K, L, T], expected: S) =
-  ## Notes that one of the `expected` token kinds was needed at the current
-  ## token. The error that is reported is the one at the farthest token,
+proc expect*[K, L, T, S](p: var ParserState[K, L, T], expected: S) =
+  ## Notes that one of the `expected` token kinds was needed, or could have
+  ## gone on, at the current token; if parsing fails there they are in the
+  ## message. The error that is reported is the one at the farthest token,
   ## which after backtracking need not be the last one.
   if p.i > p.failAt:
     p.failAt = p.i

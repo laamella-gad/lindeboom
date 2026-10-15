@@ -1,7 +1,7 @@
 ---
 id: 12
 title: Operators missing from "expected" in syntax errors
-status: open
+status: done
 labels: [diagnostics]
 depends: [5]
 ---
@@ -23,8 +23,19 @@ expected, so when parsing later fails at the same token they are not in the
 message. Both the interpreter (`runRuleBody`) and generated code
 (`genRule`'s precedence loop) have the problem.
 
-- [ ] Record the continuation tokens of every binary/suffix alternative as
-      expected when the loop stops (including those rejected by `prec`)
-- [ ] Same in the interpreter and generated parsers; regenerate the examples
+- [x] Record the continuation tokens of every binary/suffix alternative as
+      expected when the loop finds no operator (an operator that binds too
+      loosely for `prec` is taken by the enclosing level)
+- [x] Same in the interpreter and generated parsers; regenerate the examples
       and the ldb front end
-- [ ] Tests in `tparsegen` (and the calc_var session in `tgolden`)
+- [x] Tests in `tparsegen` (and the calc_var session in `tgolden`)
+
+Notes:
+
+- The runtime's `expect` is now exported. When the operator loop of a
+  precedence rule finds no binary or suffix alternative for the current
+  token, it calls `p.expect(...)` with `loopContinuation(r)`, the union of
+  all their continuations. Nothing is recorded when an operator is there
+  but binds too loosely for `prec`: the enclosing level handles that token.
+- Only `calc_var` among the generated parsers has a precedence rule, so it
+  is the only regenerated module that changed.

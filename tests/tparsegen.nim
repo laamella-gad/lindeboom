@@ -309,7 +309,8 @@ block parsegen_precedence_tree:
         └── INT "2"
     """)
   expectError(exprRule, "a +", "1:4: expected '(', '-' or ID but found end of input")
-  expectError(exprRule, "a b", "1:3: expected end of input but found ID")
+  expectError(exprRule, "a b",
+    "1:3: expected '(', '^', '-', '*', '/', '+' or end of input but found ID")
 
 block parsegen_precedence_errors:
   expectProblem("e : e '+' e ;", "rule 'e' needs an alternative that does not start with 'e'")
@@ -320,6 +321,14 @@ block parsegen_precedence_errors:
     "warning: rule 'e' is not LL(1): alternatives 1 and 2 can both continue 'e' with '+'")
   expectProblem("e : e '+' INT | ID | ID INT ;",
     "rule 'e' is not LL(1): alternatives 2 and 3 can both start with ID")
+
+block parsegen_precedence_expected:
+  # the operators that could extend the expression are in the message
+  expectError("s : e ';' ;\n" & exprRule, "a b",
+    "1:3: expected ';', '(', '^', '-', '*', '/' or '+' but found ID")
+  # also after an operand that binds tighter, as the right side of '*'
+  expectError("s : e ';' ;\n" & exprRule, "a * - b c",
+    "1:9: expected ';', '(', '^', '-', '*', '/' or '+' but found ID")
 
 block parsegen_left_recursion:
   # left recursion through another rule, or not at the start of an

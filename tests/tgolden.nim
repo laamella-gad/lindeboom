@@ -95,7 +95,7 @@ Error: division by zero
 Error: numeral 99999999999999999999 is too large
 Error: column 4: expected '-', '(', NUMERAL or VARIABLE but found end of input
 Error: column 3: unexpected character '$'
-Error: column 5: expected end of input but found NUMERAL
+Error: column 5: expected '-', '*', '/', '+' or end of input but found NUMERAL
 """, output
 
 block example_json:

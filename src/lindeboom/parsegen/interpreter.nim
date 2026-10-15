@@ -120,6 +120,8 @@ proc runRuleBody(a: Analysis, p: var Parser, r, prec: int, result: var Node) =
     var loopCands: seq[int]
     for k in 0 .. alts.high:
       if a.isLoopAlt(r, k) and p.peek in a.continuation(alts[k].body): loopCands.add k
+    # no operator here: if parsing fails at this token, the message lists them
+    if loopCands.len == 0: p.expect(a.loopContinuation(r))
     done = false
     for j, k in loopCands:
       if not done and a.precedence(r, k) >= prec:
