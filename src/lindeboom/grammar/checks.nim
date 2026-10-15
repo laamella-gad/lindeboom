@@ -133,8 +133,7 @@ proc checkLexerExpr(c: Checker, r: Rule, e: GExpr, d: var Diagnostics) =
     discard
 
 proc checkLabels(r: Rule, d: var Diagnostics) =
-  ## Alternative labels: all or none, no duplicates. Element labels: one kind
-  ## (`=` or `+=`) per name.
+  ## Alternative labels: all or none, no duplicates.
   var labelled = 0
   var seen: HashSet[string]
   for a in r.alts:
@@ -149,13 +148,6 @@ proc checkLabels(r: Rule, d: var Diagnostics) =
       if a.label.len == 0:
         d.error(a.pos, "rule '" & r.name &
           "' has labelled alternatives, so this alternative needs a label too")
-  var kinds: Table[string, bool]
-  for a in r.alts:
-    for e in a.body.walk:
-      if e.label.len > 0:
-        if e.label in kinds and kinds[e.label] != e.labelIsList:
-          d.error(e.pos, "label '" & e.label & "' is used with both '=' and '+='")
-        kinds[e.label] = e.labelIsList
 
 proc checkCommands(c: Checker, r: Rule, a: Alternative, d: var Diagnostics) =
   for cmd in a.commands:

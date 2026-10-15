@@ -5,7 +5,7 @@
 ## is that rule's token instead of a token of its own, as in ANTLR.
 
 import std/[sets, strutils, tables, unicode]
-import ./ast
+import ./[ast, idents]
 
 type
   TokenSource* = enum
@@ -66,19 +66,6 @@ func identPart(text: string): string =
       if name.len == 0: name = "U" & toHex(c, 4)
       result.add name
 
-func sanitize(s: string): string =
-  ## A valid Nim identifier: no `__`, no trailing `_`.
-  for c in s:
-    if c != '_' or (result.len > 0 and result[^1] != '_'): result.add c
-  result.removeSuffix('_')
-
-func nimNormalize(s: string): string =
-  ## Nim compares identifiers on the first character exactly, the rest
-  ## ignoring case and underscores.
-  result = $s[0]
-  for c in s[1 .. ^1]:
-    if c != '_': result.add toLowerAscii(c)
-
 proc assignIdents(v: var Vocabulary) =
   ## Rule and `tokens { }` names come first, so a literal that would clash
   ## with one gets the numbered identifier.
@@ -86,14 +73,8 @@ proc assignIdents(v: var Vocabulary) =
   for pass in [{tsEof, tsRule, tsImaginary}, {tsLiteral}]:
     for t in v.tokens.mitems:
       if t.source in pass:
-        let base = sanitize("tk" & (if t.source == tsLiteral: identPart(t.text) else: t.name))
-        var ident = base
-        var n = 2
-        while nimNormalize(ident) in idents:
-          ident = base & $n
-          inc n
-        idents.incl nimNormalize(ident)
-        t.ident = ident
+        t.ident = uniqueIdent("tk" & (if t.source == tsLiteral: identPart(t.text) else: t.name),
+          idents)
 
 func aliasLiteral(r: Rule): string =
   ## The literal a lexer rule consists of, "" if it is anything more.

@@ -11,7 +11,7 @@ grammar AST.
 
 Syntax borrowed from ANTLR 4: lowercase parser rules / Uppercase lexer rules,
 `'literals'`, `[sets]`, `~`, `.`, `? * +`, alternative labels (`# name`),
-element labels (`x=`, `xs+=`), `fragment`, `-> skip` / `channel(HIDDEN)`,
+element labels (`x=`), `fragment`, `-> skip` / `channel(HIDDEN)`,
 `tokens {}`, `options {}`, `<assoc=right>`. New: the `indentation` block
 (see #3).
 

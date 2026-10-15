@@ -1,0 +1,18 @@
+// JSON (RFC 8259).
+grammar Json;
+
+json  : value EOF ;
+value : '{' (members=pair (',' members=pair)*)? '}'      # object
+      | '[' (elements=value (',' elements=value)*)? ']'  # array
+      | STRING                                             # string
+      | NUMBER                                             # number
+      | 'true'                                             # true
+      | 'false'                                            # false
+      | 'null'                                             # null
+      ;
+pair  : key=STRING ':' value=value ;
+
+STRING : '"' (~["\\\u0000-\u001F] | '\\' (["\\/bfnrt] | 'u' HEX HEX HEX HEX))* '"' ;
+NUMBER : '-'? ('0' | [1-9] [0-9]*) ('.' [0-9]+)? ([eE] [+-]? [0-9]+)? ;
+WS     : [ \t\r\n]+ -> skip ;
+fragment HEX : [0-9a-fA-F] ;

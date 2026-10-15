@@ -1,0 +1,20 @@
+// Exercises every parser construct; used by tparsecodegen.
+grammar Features;
+
+start : item* EOF ;
+item  : 'let' name=ID '=' value=expr ';'                 # let
+      | 'list' '(' (xs=expr (',' xs=expr)*)? ')' ';'   # list
+      | 'type' type=ID ('?' | '!')? ';'                  # typeDecl
+      | 'raw' (~';')+ ';'                                # raw
+      | 'any' . ';'                                      # any
+      | 'maybe' maybe ';'                                # opt
+      | ';'                                              # empty
+      ;
+maybe : 'x' | ;
+expr  : atom (op=('+' | '-') atom)* ;
+atom  : ID | INT | '(' expr ')' | '-' INT ;
+
+ID      : [a-z]+ ;
+INT     : [0-9]+ ;
+WS      : [ \t\r\n]+ -> skip ;
+COMMENT : '#' ~[\n]* -> channel(HIDDEN) ;

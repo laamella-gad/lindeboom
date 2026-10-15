@@ -25,7 +25,6 @@ type
     tkStar = "'*'"
     tkPlus = "'+'"
     tkAssign = "'='"
-    tkPlusAssign = "'+='"
     tkTilde = "'~'"
     tkDot = "'.'"
     tkRange = "'..'"
@@ -146,7 +145,6 @@ proc next(lx: var Lexer, d: var Diagnostics): Token =
     var kind = tkEof
     var len = 2
     case two
-    of "+=": kind = tkPlusAssign
     of "..": kind = tkRange
     of "->": kind = tkArrow
     else:

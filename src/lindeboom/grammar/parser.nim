@@ -239,6 +239,7 @@ proc parseAtom(p: var Parser): GExpr =
     discard p.expect(tkRParen)
     if alts.len == 1:
       result = alts[0].body
+      result.pos = t.pos
     else:
       result = GExpr(kind: ekAlt, pos: t.pos)
       for a in alts: result.items.add a.body
@@ -247,15 +248,12 @@ proc parseAtom(p: var Parser): GExpr =
 
 proc parseElement(p: var Parser): GExpr =
   var label = ""
-  var isList = false
-  if p.at(tkId) and p.peekTok(1).kind in {tkAssign, tkPlusAssign}:
+  if p.at(tkId) and p.peekTok(1).kind == tkAssign:
     label = p.cur.text
-    isList = p.peekTok(1).kind == tkPlusAssign
     p.advance()
     p.advance()
   let atom = p.parseAtom()
   atom.label = label
-  atom.labelIsList = isList
   result = atom
   if p.cur.kind in {tkQuestion, tkStar, tkPlus}:
     let kind: range[ekOpt .. ekPlus] =

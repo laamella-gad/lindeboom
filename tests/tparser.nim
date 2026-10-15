@@ -33,7 +33,7 @@ block parser_rules_and_alternatives:
   let g = parse("""
     grammar G;
     expr : <assoc=right> left=expr '^' right=expr  # pow
-         | args+=ID (',' args+=ID)*                # list
+         | args=ID (',' args=ID)*                  # list
          ;
     fragment DIGIT : [0-9] ;
     WS : [ \t]+ -> skip ;
@@ -48,7 +48,7 @@ block parser_rules_and_alternatives:
   doAssert items[0].kind == ekRuleRef and items[0].label == "left"
   doAssert items[1].kind == ekLiteral and items[1].text == "^"
   let list = expr.alts[1].body.items
-  doAssert list[0].kind == ekTokenRef and list[0].labelIsList
+  doAssert list[0].kind == ekTokenRef and list[0].label == "args"
   doAssert list[1].kind == ekStar and list[1].greedy
   doAssert list[1].inner.kind == ekSeq and list[1].inner.items[1].label == "args"
   doAssert g.rules[1].isFragment and g.rules[1].kind == rkLexer

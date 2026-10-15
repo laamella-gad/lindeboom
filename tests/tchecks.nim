@@ -56,8 +56,6 @@ block checks_lexer_commands:
 block checks_labels:
   check("a : 'x' # one | 'y' ;", "this alternative needs a label too")
   check("a : 'x' # one | 'y' # one ;", "duplicate alternative label 'one'")
-  check("a : x='x' x+='y' ;", "label 'x' is used with both '=' and '+='")
-  doAssert ok(header & "a : xs+='x' (',' xs+='x')* ;")
 
 block checks_empty_matches:
   check("a : X ; X : 'x'? ;", "lexer rule 'X' can match empty input")

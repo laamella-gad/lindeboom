@@ -1,0 +1,15 @@
+// A calculator for floating point expressions, written LL(1) style: one rule
+// per precedence level, with loops for left-associative operators.
+grammar Calc;
+
+calc   : expr EOF ;
+expr   : operands=term (ops=('+' | '-') operands=term)* ;
+term   : operands=factor (ops=('*' | '/') operands=factor)* ;
+factor : '-' factor        # neg
+       | NUMBER            # num
+       | '(' expr ')'      # paren
+       ;
+
+NUMBER : DIGIT+ ('.' DIGIT+)? ([eE] [+-]? DIGIT+)? ;
+WS     : [ \t\r\n]+ -> skip ;
+fragment DIGIT : [0-9] ;

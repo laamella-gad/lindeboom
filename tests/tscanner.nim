@@ -7,9 +7,9 @@ proc kinds(src: string): seq[TokenKind] =
   doAssert not d.hasErrors, $d.items
 
 block scanner_punctuation:
-  doAssert kinds(": ; | ( ) ? * + = += ~ . .. # -> , < > }") == @[
+  doAssert kinds(": ; | ( ) ? * + = ~ . .. # -> , < > }") == @[
     tkColon, tkSemi, tkPipe, tkLParen, tkRParen, tkQuestion, tkStar, tkPlus,
-    tkAssign, tkPlusAssign, tkTilde, tkDot, tkRange, tkHash, tkArrow, tkComma,
+    tkAssign, tkTilde, tkDot, tkRange, tkHash, tkArrow, tkComma,
     tkLt, tkGt, tkRBrace, tkEof]
 
 block scanner_block_keywords:

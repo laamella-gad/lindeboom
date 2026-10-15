@@ -25,7 +25,6 @@ type
   GExpr* = ref object
     pos*: SourcePos
     label*: string        ## element label, "" if none
-    labelIsList*: bool    ## `+=` instead of `=`
     case kind*: ExprKind
     of ekSeq, ekAlt:
       items*: seq[GExpr]
