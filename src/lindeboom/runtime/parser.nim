@@ -91,6 +91,16 @@ func sonsWith*[K, L, T](n: ParseNode[K, L, T], label: L): seq[ParseNode[K, L, T]
   for x in n.sons:
     if x.edge == label: result.add x
 
+func token*[K, L, T](n: ParseNode[K, L, T], kind: T): ParseNode[K, L, T] =
+  ## The first son that is a token of `kind`, nil if there is none; for a
+  ## token without an element label, as `'virtual'` in `'virtual'? ID`.
+  for x in n.sons:
+    if x.kind == K(0) and x.tok.kind == kind: return x
+
+func has*[K, L, T](n: ParseNode[K, L, T], kind: T): bool =
+  ## Whether a son of `n` is a token of `kind`.
+  n.token(kind) != nil
+
 func firstToken[K, L, T](n: ParseNode[K, L, T]): ParseNode[K, L, T] =
   if n.kind == K(0):
     result = n

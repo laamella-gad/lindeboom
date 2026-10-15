@@ -74,4 +74,24 @@ for f in commandLineParams():
       "got NUMBER \"2\"\n",
     "calc > expr > term > factor: wanted '+' or '-' or '*' or '/' or ')', got EOF \"\"\n"], $got
 
+block parsecodegen_unlabelled_tokens:
+  # `has` and `token` find tokens by kind; a `token=` label is an overload
+  let dir = tmp / "tokens"
+  createDir(dir)
+  let grammarFile = dir / "flags.ldb"
+  writeFile(grammarFile, "grammar Flags;\ns : 'virtual'? token=ID ';' ;\n" &
+    "ID : [a-z]+ ;\nWS : ' ' -> skip ;\n")
+  discard generate(Case(grammarFile: grammarFile), dir, standalone = false)
+  writeFile(dir / "driver.nim", """
+import std/os
+import ./flags_parser
+
+for f in commandLineParams():
+  let n = parseS(readFile(f)).tree
+  echo n.has(tkVirtual), " ", n.token(tkVirtual) != nil, " ", n.token.text
+  stdout.write "----\n"
+""")
+  let got = runDriver(compile(dir, standalone = false), dir, @["virtual f;", "g;"])
+  doAssert got == @["true true f\n", "false false g\n"], $got
+
 removeDir(tmp)

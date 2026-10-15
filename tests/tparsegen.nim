@@ -1,4 +1,4 @@
-import std/[assertions, strutils]
+import std/[assertions, strutils, tables]
 import lindeboom/[grammar, lexgen, parsegen]
 import ./parsehelpers
 
@@ -418,6 +418,17 @@ block parsegen_reserved_labels:
     ├── label: ID "x"
     └── ':'
     """)
+
+block parsegen_unlabelled_tokens:
+  # a token without a label is found by its kind
+  let (a, t, _) = analyzed(g("s : 'virtual'? ID ;"))
+  var d: Diagnostics
+  let virtual = a.v.byLiteral["virtual"]
+  let n = a.interpret(tokenize[int](t, "virtual x", d), "virtual x", 0, d)
+  doAssert n.has(virtual) and n.token(virtual).text == "virtual"
+  let m = a.interpret(tokenize[int](t, "x", d), "x", 0, d)
+  doAssert not m.has(virtual) and m.token(virtual) == nil
+  doAssert not d.hasErrors, $d.items
 
 block parsegen_node_kinds:
   let (a, _, _) = analyzed(g("s : x # if | y # token ;\nx : ID ;\ny : t=INT ;\ntoken : ID ;"))
