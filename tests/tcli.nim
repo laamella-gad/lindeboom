@@ -3,7 +3,7 @@ import std/[assertions, os, osproc, strutils]
 let root = currentSourcePath().parentDir.parentDir
 let exe = root / "bin" / "lindeboom_test"
 doAssert execCmd("nim c --hints:off -o:" & quoteShell(exe) & " " &
-  quoteShell(root / "src" / "nim_parser_generator.nim")) == 0
+  quoteShell(root / "src" / "lindeboom.nim")) == 0
 
 proc run(args: string): (string, int) =
   execCmdEx(quoteShell(exe) & " " & args)

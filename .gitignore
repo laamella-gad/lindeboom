@@ -8,8 +8,7 @@ bin/
 *.out
 
 # Compiled binaries next to their sources (nim c without -o)
-/nim_parser_generator
-/src/nim_parser_generator
+/lindeboom
 
 # Nimble
 nimbledeps/

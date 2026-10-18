@@ -9,7 +9,7 @@ binDir = "bin"
 # Dependencies
 requires "nim >= 2.2.10"
 
-namedBin["nim_parser_generator"] = "lindeboom"
+bin = @["lindeboom"]
 
 task test, "Run the test suite":
   exec "nim c -r tests/tester.nim"
