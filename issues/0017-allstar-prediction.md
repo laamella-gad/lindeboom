@@ -64,6 +64,13 @@ the interpreter and generated parsers.
 - **DFA cache:** shared, in a module-level variable of the generated parser
   (one per interpreter `Analysis`), kept across parses, as ANTLR 4. Not
   thread-safe; parsing from several threads needs a lock.
+- **Testing:** this needs to be tested thoroughly. Take test cases straight
+  from the ANTLR 4 repository: the runtime test suite's descriptors
+  (`runtime-testsuite/resources/org/antlr/v4/test/runtime/descriptors`),
+  each a grammar, an input and the expected output. The prediction ones
+  (`FullContextParsing`, `ParserExec`, `LeftRecursion`, `SemPredEvalParser`
+  for precedence) matter most. Actions and target templates in them are
+  rewritten as parse-tree or error expectations.
 
 ## Tasks
 
@@ -82,5 +89,7 @@ the interpreter and generated parsers.
       `tests/grammars/ambiguous.ldb`, MiniPy; a nested ambiguous grammar
       that is exponential with backtracking runs in linear time; `tfuzz`
       keeps interpreter and generated parsers in agreement
+- [ ] Tests ported from ANTLR 4's runtime test suite descriptors (see
+      Testing above), run against both the interpreter and generated parsers
 - [ ] `README.md` updated (prediction, the parser bullet under Design, the
       "not LL(1)" warning)
