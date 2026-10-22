@@ -18,29 +18,28 @@ proc candidates(a: Analysis, p: var Parser, alts: seq[GExpr]): seq[int] =
   if result.len == 0: p.fail(a.expected(alts))
   elif p.peek notin first: p.expect(first)
 
-proc runRule(a: Analysis, p: var Parser, r: int, prec = 0): Node
+func hasPredictionConflict(a: Analysis, alts: seq[GExpr]): bool =
+  for i, left in alts:
+    let leftSet = a.predict(left)
+    for j in i + 1 .. alts.high:
+      if (leftSet * a.predict(alts[j])).len > 0: return true
+
+proc adaptivePredict(a: Analysis, p: var Parser, decision: int, precedence = 0): int =
+  result = p.predict(decision, a.atn, a.decisions, a.atRules,
+    a.predictionCache, precedence)
+
+proc runRule(a: Analysis, p: var Parser, r: int, prec = 0, returnState = -1): Node
 
 proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int)
-
-proc attempt(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int): bool =
-  ## Runs `e` speculatively: on a syntax error, returns false and leaves `p`
-  ## and `n` as they were.
-  var node = n
-  let m = p.mark(node)
-  try:
-    a.run(p, n, e, label)
-    p.commit(m)
-    result = true
-  except SyntaxError:
-    p.reset(node, m)
 
 proc runLoop(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
   ## The iterations of `*` or `+` after the first one.
   let first = a.first(e.inner)
   let follow = a.grammarFollow(e)
   if a.isAmbiguous(e):
-    var more = true
-    while more and p.more(n, first, follow): more = a.attempt(p, n, e.inner, label)
+    while a.adaptivePredict(p, a.decisionByExpr[e]) == 0:
+      a.run(p, n, e.inner, label)
+    p.expect(first)
   else:
     while p.more(n, first, follow): a.run(p, n, e.inner, label)
 
@@ -55,13 +54,16 @@ proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
     of ekSeq:
       for x in e.items: a.run(p, n, x, label)
     of ekAlt:
-      let cands = a.candidates(p, e.items)
-      var k = 0
-      while k < cands.high and not a.attempt(p, n, e.items[cands[k]], label): inc k
-      if k == cands.high: a.run(p, n, e.items[cands[k]], label)
+      if a.hasPredictionConflict(e.items):
+        a.run(p, n, e.items[a.adaptivePredict(p, a.decisionByExpr[e])], label)
+      else:
+        let cands = a.candidates(p, e.items)
+        a.run(p, n, e.items[cands[0]], label)
     of ekOpt:
       if p.peek in a.first(e.inner):
-        if a.isAmbiguous(e): discard a.attempt(p, n, e.inner, label)
+        if a.isAmbiguous(e):
+          if a.adaptivePredict(p, a.decisionByExpr[e]) == 0:
+            a.run(p, n, e.inner, label)
         else: a.run(p, n, e.inner, label)
       else:
         p.expect(a.first(e.inner))
@@ -71,7 +73,8 @@ proc run(a: Analysis, p: var Parser, n: Node, e: GExpr, label: int) =
       a.run(p, n, e.inner, label)
       a.runLoop(p, n, e, label)
     of ekRuleRef:
-      n.add(a.runRule(p, a.ruleIndex[e.name], a.operandPrec.getOrDefault(e)), label)
+      n.add(a.runRule(p, a.ruleIndex[e.name], a.operandPrec.getOrDefault(e),
+        a.callReturn[e]), label)
     of ekLiteral, ekTokenRef:
       let k = a.tokenKind(e)
       if p.peek != k: p.fail([k])
@@ -106,46 +109,22 @@ proc runRuleBody(a: Analysis, p: var Parser, r, prec: int, result: var Node) =
       heads.add k
       bodies.add alts[k].body
   if not a.isLabelled(r): result = p.newNode(a.altKinds[r][0])
-  let cands = if heads.len == 1: @[0] else: a.candidates(p, bodies)
-  var i = 0
   var done = false
-  while not done and i < cands.high:
-    let m = p.mark(result)
-    try:
-      a.runAlt(p, r, heads[cands[i]], result)
-      p.commit(m)
-      done = true
-    except SyntaxError:
-      p.reset(result, m)
-      inc i
-  if not done: a.runAlt(p, r, heads[cands[i]], result)
-  var more = a.isPrecRule[r]
-  while more:
-    # binary and suffix alternatives the current token can continue; all but
-    # the last are tried speculatively
-    var loopCands: seq[int]
-    for k in 0 .. alts.high:
-      if a.isLoopAlt(r, k) and p.peek in a.continuation(alts[k].body): loopCands.add k
-    # no operator here: if parsing fails at this token, the message lists them
-    if loopCands.len == 0: p.expect(a.loopContinuation(r))
-    done = false
-    for j, k in loopCands:
-      if not done and a.precedence(r, k) >= prec:
-        if j < loopCands.high:
-          let m = p.mark(result)
-          try:
-            a.extend(p, r, k, result)
-            p.commit(m)
-            done = true
-          except SyntaxError:
-            p.reset(result, m)
-        else:
-          a.extend(p, r, k, result)
-          done = true
-    more = done
+  if bodies.len > 1 and a.hasPredictionConflict(bodies):
+    let choice = a.adaptivePredict(p, a.ruleDecision[r])
+    a.runAlt(p, r, heads[choice], result)
+  else:
+    let cands = if heads.len == 1: @[0] else: a.candidates(p, bodies)
+    a.runAlt(p, r, heads[cands[0]], result)
+    done = true
+  if a.isPrecRule[r]:
+    while true:
+      let choice = a.adaptivePredict(p, a.loopDecision[r], prec)
+      if choice == high(int): break
+      a.extend(p, r, choice, result)
 
-proc runRule(a: Analysis, p: var Parser, r: int, prec = 0): Node =
-  p.enter(r)
+proc runRule(a: Analysis, p: var Parser, r: int, prec = 0, returnState = -1): Node =
+  p.enter(r, returnState, prec)
   try:
     a.runRuleBody(p, r, prec, result)
   except SyntaxError:
@@ -170,6 +149,6 @@ proc interpret*(a: Analysis, tokens: seq[LexerToken[int]], src: string, rule: in
   for r in a.parserRules: follows[r] = a.ruleFollow(r)
   var p = initParserState[int, int, int](tokens, src, names, ruleNames,
     proc (r, kind: int): bool = kind in follows[r])
-  result = a.runRule(p, rule)
+  result = a.runRule(p, rule, 0, -1)
   p.finish(result, d)
   d.formatSyntaxErrors(formatter)

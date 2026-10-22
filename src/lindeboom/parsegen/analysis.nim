@@ -1,12 +1,10 @@
-## Grammar analysis for LL(1) parsing: nullable, FIRST and FOLLOW sets,
-## left recursion, conflicts, and the node kinds and labels of the tree.
+## Grammar analysis: nullable, FIRST and FOLLOW sets, left recursion,
+## adaptive transition networks, and parse-tree node kinds and labels.
 ##
 ## Every rule can be a start rule, so every rule can be followed by EOF.
 ##
-## Where one token of lookahead is not enough, the parser tries the
-## alternatives that the token can start in order, backtracking from all but
-## the last; a `?`, `*` or `+` element is tried before what follows it. The
-## analysis reports these decisions as warnings.
+## Where one token of lookahead is not enough, the parser predicts with the
+## analyzed ATN and the active rule-call context.
 ##
 ## A rule with an alternative that starts with the rule itself is a
 ## precedence rule, parsed by precedence climbing as in ANTLR 4: its
@@ -15,31 +13,15 @@
 ## so earlier alternatives bind tighter.
 
 import std/[algorithm, hashes, packedsets, sets, tables]
-import ../runtime/diagnostics, ../grammar/[ast, idents, vocabulary]
+import ../runtime/[diagnostics, parser], ../grammar/[ast, idents, vocabulary]
 
 type
   TokenSet* = PackedSet[int]
 
-  AtEdgeKind* = enum
-    aeEpsilon, aeTokens, aeCall
-
-  AtEdge* = object
-    kind*: AtEdgeKind
-    target*: int
-    tokens*: TokenSet
-    rule*: int                 ## parser rule index for aeCall
-
-  AtState* = object
-    edges*: seq[AtEdge]
-
-  AtDecision* = object
-    state*: int
-    alternatives*: seq[int]    ## entry state for each alternative, in source order
-    rule*: int                 ## grammar rule owning this decision
-    expression*: GExpr         ## nil for the rule's top-level choice
-
-  AtRule* = object
-    start*, stop*: int
+  AtEdge* = AtnEdgeData
+  AtState* = AtnStateData
+  AtDecision* = AtnDecisionData
+  AtRule* = AtnRuleData
 
   AltShape* = enum
     asPrimary  ## `'(' e ')'`, `ID`
@@ -75,6 +57,9 @@ type
     decisions*: seq[AtDecision]
     decisionByExpr*: Table[GExpr, int]
     ruleDecision*: seq[int]                ## decision id, or -1 for a single-alternative rule
+    loopDecision*: seq[int]
+    callReturn*: Table[GExpr, int]           ## ATN return state at each rule call site
+    predictionCache*: PredictionCache
 
 const reservedLabels = ["kind", "edge", "tok", "sons", "len", "text", "pos",
   "items", "treeRepr"]
@@ -400,73 +385,15 @@ proc checkLeftRecursion(a: Analysis, d: var Diagnostics): HashSet[int] =
         path.add a.g.rules[r].name
       d.error(a.g.rules[i].pos, "rule '" & a.g.rules[i].name & "' is left-recursive: " & path)
 
-# ---- conflicts ----
-
-func tokenList(a: Analysis, s: TokenSet): string =
-  ## `ID, INT and '('`
-  let kinds = s.sortedKinds
-  for i, k in kinds:
-    if i > 0: result.add(if i == kinds.high: " and " else: ", ")
-    result.add a.v.tokens[k].name
-
-type Choice = object
-  number: int       ## 1-based alternative number
-  pos: SourcePos
-  tokens: TokenSet  ## tokens that select it
-
-proc checkChoices(a: Analysis, rule: string, choices: seq[Choice], what: string,
-    d: var Diagnostics) =
-  for j in 1 .. choices.high:
-    var i = 0
-    while i < j:
-      let common = choices[i].tokens * choices[j].tokens
-      if common.len > 0:
-        d.warning(choices[j].pos, "rule '" & rule & "' is not LL(1): alternatives " &
-          $choices[i].number & " and " & $choices[j].number & what & a.tokenList(common) &
-          "; trying them in order")
-        i = j
-      else:
-        inc i
-
-proc checkAlternatives(a: Analysis, rule: string, alts: seq[GExpr], what: string,
-    d: var Diagnostics) =
-  var choices: seq[Choice]
-  for i, alt in alts:
-    choices.add Choice(number: i + 1, pos: alt.pos, tokens: a.predict(alt))
-  a.checkChoices(rule, choices, what & " can both start with ", d)
-
-proc checkConflicts(a: Analysis, i: int, d: var Diagnostics) =
-  let r = a.g.rules[i]
-  var head, loop: seq[Choice]
-  for k, alt in r.alts:
-    if a.isLoopAlt(i, k):
-      loop.add Choice(number: k + 1, pos: alt.pos, tokens: a.continuation(alt.body))
-    else:
-      head.add Choice(number: k + 1, pos: alt.pos, tokens: a.predict(alt.body))
-  a.checkChoices(r.name, head, " can both start with ", d)
-  a.checkChoices(r.name, loop, " can both continue '" & r.name & "' with ", d)
-  for alt in r.alts:
-    for e in alt.body.walk:
-      if e.isTokenSet:
-        discard
-      elif e.kind == ekAlt:
-        a.checkAlternatives(r.name, e.items, " of this block", d)
-      elif e.kind in {ekOpt, ekStar, ekPlus}:
-        let common = a.first[e.inner] * a.follow[e]
-        if common.len > 0:
-          let what = if e.kind == ekOpt: "the optional element" else: "another iteration of the loop"
-          d.warning(e.pos, "rule '" & r.name & "' is not LL(1): " & a.tokenList(common) &
-            (if common.len == 1: " can" else: " can each") & " start " & what &
-            " or follow it; trying " & what & " first")
-
 # ---- augmented transition network ----
 
 proc newAtState(a: var Analysis): int =
   result = a.atn.len
   a.atn.add AtState()
 
-proc epsilon(a: var Analysis, fromState, toState: int) =
-  a.atn[fromState].edges.add AtEdge(kind: aeEpsilon, target: toState)
+proc epsilon(a: var Analysis, fromState, toState: int, minimumPrecedence = -1) =
+  a.atn[fromState].edges.add AtEdge(kind: atEpsilon, target: toState,
+    rule: -1, minimumPrecedence: minimumPrecedence)
 
 proc compileExpr(a: var Analysis, e: GExpr, fromState, toState: int, owner: int)
 
@@ -483,7 +410,7 @@ proc compileExpr(a: var Analysis, e: GExpr, fromState, toState: int, owner: int)
         a.compileExpr(item, current, next, owner)
         current = next
   of ekAlt:
-    var decision = AtDecision(state: fromState, rule: owner, expression: e)
+    var decision = AtDecision(state: fromState, rule: owner)
     for branch in e.items:
       let entry = a.newAtState()
       let exit = a.newAtState()
@@ -500,7 +427,7 @@ proc compileExpr(a: var Analysis, e: GExpr, fromState, toState: int, owner: int)
     a.compileExpr(e.inner, entry, toState, owner)
     a.decisionByExpr[e] = a.decisions.len
     a.decisions.add AtDecision(state: fromState, alternatives: @[entry, toState],
-      rule: owner, expression: e)
+      rule: owner)
   of ekStar, ekPlus:
     if e.kind == ekStar:
       let entry = a.newAtState()
@@ -509,7 +436,7 @@ proc compileExpr(a: var Analysis, e: GExpr, fromState, toState: int, owner: int)
       a.compileExpr(e.inner, entry, fromState, owner)
       a.decisionByExpr[e] = a.decisions.len
       a.decisions.add AtDecision(state: fromState, alternatives: @[entry, toState],
-        rule: owner, expression: e)
+        rule: owner)
     else:
       let first = a.newAtState()
       let repeat = a.newAtState()
@@ -521,16 +448,18 @@ proc compileExpr(a: var Analysis, e: GExpr, fromState, toState: int, owner: int)
       a.compileExpr(e.inner, next, repeat, owner)
       a.decisionByExpr[e] = a.decisions.len
       a.decisions.add AtDecision(state: repeat, alternatives: @[next, toState],
-        rule: owner, expression: e)
+        rule: owner)
   of ekRuleRef:
-    a.atn[fromState].edges.add AtEdge(kind: aeCall,
-      target: toState, rule: a.ruleIndex[e.name])
+    a.callReturn[e] = toState
+    a.atn[fromState].edges.add AtEdge(kind: atCall,
+      target: toState, rule: a.ruleIndex[e.name],
+      minimumPrecedence: a.operandPrec.getOrDefault(e))
   of ekLiteral, ekTokenRef:
-    a.atn[fromState].edges.add AtEdge(kind: aeTokens, target: toState,
-      tokens: a.tokens(e))
+    a.atn[fromState].edges.add AtEdge(kind: atTokens, target: toState, rule: -1,
+      tokens: a.tokens(e).sortedKinds, minimumPrecedence: -1)
   of ekWildcard, ekNot:
-    a.atn[fromState].edges.add AtEdge(kind: aeTokens, target: toState,
-      tokens: a.tokens(e))
+    a.atn[fromState].edges.add AtEdge(kind: atTokens, target: toState, rule: -1,
+      tokens: a.tokens(e).sortedKinds, minimumPrecedence: -1)
   of ekCharSet, ekRange:
     raiseAssert "lexer expression in parser ATN"
 
@@ -539,13 +468,59 @@ proc buildAtn(a: var Analysis) =
   ## can carry caller context instead of expanding recursive rules.
   a.atRules.setLen a.g.rules.len
   a.ruleDecision = newSeq[int](a.g.rules.len)
+  a.loopDecision = newSeq[int](a.g.rules.len)
   for id in a.ruleDecision.mitems: id = -1
+  for id in a.loopDecision.mitems: id = -1
   for i in a.parserRules:
     let start = a.newAtState()
     let stop = a.newAtState()
     a.atRules[i] = AtRule(start: start, stop: stop)
     let alts = a.g.rules[i].alts
-    if alts.len > 1:
+    if a.isPrecRule[i]:
+      # Predict over the rewritten expression shape: one primary/prefix,
+      # followed by zero or more operator/suffix tails. A literal left
+      # recursive call would create an epsilon cycle during ATN closure.
+      let loop = a.newAtState()
+      var heads: seq[int]
+      for k in 0 .. alts.high:
+        if not a.isLoopAlt(i, k): heads.add k
+      if heads.len > 1:
+        var decision = AtDecision(state: start, rule: i)
+        for k in heads:
+          let entry = a.newAtState()
+          let exit = a.newAtState()
+          decision.alternatives.add entry
+          a.epsilon(start, entry)
+          a.compileExpr(alts[k].body, entry, exit, i)
+          a.epsilon(exit, loop)
+        a.ruleDecision[i] = a.decisions.len
+        a.decisions.add decision
+      elif heads.len == 1:
+        a.compileExpr(alts[heads[0]].body, start, loop, i)
+      a.epsilon(loop, stop)
+      var loopChoice = AtDecision(state: loop, rule: i)
+      for k, alt in alts:
+        if a.isLoopAlt(i, k):
+          let entry = a.newAtState()
+          let exit = a.newAtState()
+          let minimum = a.precedence(i, k)
+          loopChoice.alternatives.add entry
+          loopChoice.alternativeIds.add k
+          loopChoice.minimums.add minimum
+          a.epsilon(loop, entry, minimum)
+          let items = alt.body.items
+          var current = entry
+          for j in 1 .. items.high:
+            let next = if j == items.high: exit else: a.newAtState()
+            a.compileExpr(items[j], current, next, i)
+            current = next
+          a.epsilon(exit, loop)
+      loopChoice.alternatives.add stop
+      loopChoice.alternativeIds.add high(int)
+      loopChoice.minimums.add -1
+      a.loopDecision[i] = a.decisions.len
+      a.decisions.add loopChoice
+    elif alts.len > 1:
       var decision = AtDecision(state: start, rule: i)
       for alt in alts:
         let entry = a.newAtState()
@@ -624,8 +599,9 @@ proc assignNames(a: var Analysis, d: var Diagnostics) =
 
 proc analyze*(g: Grammar, v: Vocabulary, d: var Diagnostics): Analysis =
   ## Analysis of `g`, which must have passed `checkGrammar` without errors.
-  ## Reports left recursion, LL(1) conflicts and label problems.
-  result = Analysis(g: g, v: v, visible: visibleTokens(g, v))
+  ## Reports left recursion and label problems.
+  result = Analysis(g: g, v: v, visible: visibleTokens(g, v),
+    predictionCache: newPredictionCache())
   for i, r in g.rules:
     if r.kind == rkParser:
       result.ruleIndex[r.name] = i
@@ -643,6 +619,4 @@ proc analyze*(g: Grammar, v: Vocabulary, d: var Diagnostics): Analysis =
   result.assignNames(d)
   result.classify(d)
   result.buildAtn()
-  let leftRecursive = result.checkLeftRecursion(d)
-  for i in result.parserRules:
-    if i notin leftRecursive: result.checkConflicts(i, d)
+  discard result.checkLeftRecursion(d)

@@ -165,25 +165,17 @@ block parsegen_tree_text_escapes:
   let src = "grammar G;\ns : S ;\nS : '\"' ~'\"'* '\"' ;\n"
   doAssert tree(src, "\"a\nb\"") == "s\n└── S \"\\\"a\\nb\\\"\"\n"
 
-block parsegen_conflicts_are_warnings:
-  expectProblem("s : ID INT | ID ID ;",
-    "2:14: warning: rule 's' is not LL(1): alternatives 1 and 2 can both start with ID; " &
-    "trying them in order")
-  expectProblem("s : ('a' | 'a' ID) ;",
-    "alternatives 1 and 2 of this block can both start with 'a'; trying them in order")
-  expectProblem("s : e 'a' ;\ne : 'a' | ;",
-    "rule 'e' is not LL(1): alternatives 1 and 2 can both start with 'a'")
-  expectProblem("s : (',' ID)* ','? ;",
-    "2:5: warning: rule 's' is not LL(1): ',' can start another iteration of the loop " &
-    "or follow it; trying another iteration of the loop first")
-  expectProblem("s : ID? ID ;",
-    "rule 's' is not LL(1): ID can start the optional element or follow it; " &
-    "trying the optional element first")
-  expectProblem("s : (ID | INT)? (ID | INT) ;",
-    "ID and INT can each start the optional element or follow it")
-  doAssert problems(g("s : ID (',' ID)* ';'? ;")).len == 0
+block parsegen_conflicts_are_predicted_without_warnings:
+  for rules in [
+      "s : ID INT | ID ID ;",
+      "s : ('a' | 'a' ID) ;",
+      "s : e 'a' ;\ne : 'a' | ;",
+      "s : (',' ID)* ','? ;",
+      "s : ID? ID ;",
+      "s : (ID | INT)? (ID | INT) ;"]:
+    doAssert problems(g(rules)).len == 0, $problems(g(rules))
 
-block parsegen_backtracking_alternatives:
+block parsegen_adaptive_alternatives:
   let rules = "s : x=ID '=' INT # assign | ID # name | ID ID # pair ;"
   expectTree(rules, "a = 1", """
     assign
@@ -195,14 +187,48 @@ block parsegen_backtracking_alternatives:
     name
     └── ID "a"
     """)
-  # the first alternative that matches wins, even if the rule then fails
-  expectError(rules, "a b", "1:3: expected '=' or end of input but found ID 'b'")
+  # The caller's continuation distinguishes the longer alternative.
+  expectTree(rules, "a b", """
+    pair
+    ├── ID "a"
+    └── ID "b"
+    """)
+  expectTree("s : a 'z' ;\na : 'x' | 'x' 'y' ;", "x y z", """
+    s
+    ├── a
+    │   ├── 'x'
+    │   └── 'y'
+    └── 'z'
+    """)
   # nested blocks, and sons of the failed attempt are dropped
   expectTree("s : 'a' (ID INT | ID ID) ;", "a x y", """
     s
     ├── 'a'
     ├── ID "x"
     └── ID "y"
+    """)
+  expectTree("s : 'a' # first | 'a' # second ;", "a", """
+    first
+    └── 'a'
+    """)
+  let stackSensitive =
+    "s : 'x' b | 'y' c ;\nb : a 'a' ;\nc : a 'b' 'a' ;\na : 'b' | ;"
+  expectTree(stackSensitive, "y b a", """
+    s
+    ├── 'y'
+    └── c
+        ├── a
+        ├── 'b'
+        └── 'a'
+    """)
+  expectTree(stackSensitive, "y b b a", """
+    s
+    ├── 'y'
+    └── c
+        ├── a
+        │   └── 'b'
+        ├── 'b'
+        └── 'a'
     """)
 
 block parsegen_backtracking_loops:
@@ -240,7 +266,6 @@ block parsegen_backtracking_operators:
     │   └── ID "c"
     └── ']'
     """)
-  expectProblem(rules, "alternatives 1 and 2 can both continue 'e' with '['; trying them in order")
 
 block parsegen_farthest_error:
   # the error is where parsing got farthest, not where the last attempt failed
@@ -310,25 +335,21 @@ block parsegen_precedence_tree:
     """)
   expectError(exprRule, "a +", "1:4: expected '(', '-' or ID but found end of input")
   expectError(exprRule, "a b",
-    "1:3: expected '(', '^', '-', '*', '/', '+' or end of input but found ID 'b'")
+    "1:3: expected end of input but found ID 'b'")
 
 block parsegen_precedence_errors:
   expectProblem("e : e '+' e ;", "rule 'e' needs an alternative that does not start with 'e'")
   expectProblem("e : e '+' INT | ;", "left-recursive rule 'e' can match empty input")
   expectProblem("e : e '+'? | INT ;",
     "rule 'e': alternative 1 can match empty input after the leading 'e'")
-  expectProblem("e : e '+' INT | e '+' ID | INT ;",
-    "warning: rule 'e' is not LL(1): alternatives 1 and 2 can both continue 'e' with '+'")
-  expectProblem("e : e '+' INT | ID | ID INT ;",
-    "rule 'e' is not LL(1): alternatives 2 and 3 can both start with ID")
 
 block parsegen_precedence_expected:
   # the operators that could extend the expression are in the message
   expectError("s : e ';' ;\n" & exprRule, "a b",
-    "1:3: expected ';', '(', '^', '-', '*', '/' or '+' but found ID 'b'")
+    "1:3: expected ';' but found ID 'b'")
   # also after an operand that binds tighter, as the right side of '*'
   expectError("s : e ';' ;\n" & exprRule, "a * - b c",
-    "1:9: expected ';', '(', '^', '-', '*', '/' or '+' but found ID 'c'")
+    "1:9: expected ';' but found ID 'c'")
 
 block parsegen_skipped_optionals_expected:
   # what skipped optional elements could have started is in the message

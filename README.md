@@ -333,19 +333,12 @@ says how tabs in indentation count:
 
 ## How the parser decides
 
-The parser looks at one token to choose between alternatives, and between
-going on with or leaving `?`, `*` and `+`. Where one token is not enough,
-it tries the alternatives that the token can start in order, going back
-when one fails, and tries an optional or repeated element before what
-follows it. `check`, `gen` and `parse` warn about each such place:
-
-```text
-amb.ldb:3:8: warning: rule 'stmt' is not LL(1): alternatives 1 and 2 can both start with ID; trying them in order
-```
-
-The parse is still correct, but trying in order can take longer and gives
-the first alternative that matches, not the longest. Rewriting the rule
-removes the warning.
+The parser uses one token when that settles a choice. Otherwise it predicts
+with an ATN built from the grammar, following alternatives in parallel through
+the remaining input and the active rule-call context. It then parses the
+selected alternative once. Repeated predictions reuse cached lookahead
+results. Ambiguous input is resolved in favor of the earliest alternative.
+Expression rules continue to use precedence climbing.
 
 ## The generated code
 
@@ -409,8 +402,8 @@ to handle that.
 ## Errors
 
 **Grammar problems** are reported by `check`, `gen` and `parse` with their
-position in the grammar. Errors stop code generation; warnings (a rule that
-is not LL(1), an unused token or rule, a token that never matches) do not.
+position in the grammar. Errors stop code generation; warnings about unused
+tokens or rules and tokens that never match do not.
 
 **Syntax errors** in the input come back in `ParseResult.diagnostics`.
 Iterating over the `Diagnostics` gives them in source order; `$d` is
@@ -483,9 +476,9 @@ source ─▶ lexer ─▶ indentation filter ─▶ parser ─▶ parse tree
   stored as tables. Fast, and needs no hand-written code.
 - **Indentation:** a separate filter between the lexer and the parser, so
   one well-tested algorithm serves every indentation grammar.
-- **Parser:** recursive descent, one procedure per rule, with one token of
-  lookahead and trying alternatives in order where that is not enough.
-  Readable and easy to debug. Expression rules use precedence climbing.
+- **Parser:** recursive descent, one procedure per rule. Non-LL(1) choices use
+  adaptive ATN prediction with cached lookahead and the active call context.
+  Expression rules use precedence climbing.
 - **Output:** a generic parse tree processed with `case n.kind`, as in the
   Nim compiler, rather than a type per rule.
 - **Syntax errors:** recovered from as in ANTLR, and kept as data as well

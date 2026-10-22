@@ -8,20 +8,44 @@
 ## the element label of a node in its parent; label 0 means no label. (It is
 ## not called `label`, which is a common element label in grammars.)
 ##
-## Error recovery works as in ANTLR. While the parser tries an alternative
-## speculatively, a syntax error makes it backtrack. Otherwise the error is
-## reported, and the rule it occurs in skips tokens until one that can follow
-## a rule being parsed, then returns what it has so far. A loop facing a
-## token that can neither start another iteration nor follow the loop skips
-## tokens until one that can. No error is reported until a token has been
-## matched since the last one.
+## Adaptive prediction explores alternatives without building parse trees,
+## reports failures at the farthest token examined, then parses the selected
+## alternative once. Error recovery skips tokens until one can follow a rule
+## being parsed, then returns what it has so far. No error is reported until
+## a token has been matched since the last one.
 
-import std/[algorithm, strutils]
+import std/[algorithm, hashes, sequtils, sets, strutils, tables]
 import ./lexer
 
 export lexer
 
 type
+  AtnEdgeKind* = enum
+    atEpsilon, atTokens, atCall
+
+  AtnEdgeData* = object
+    kind*: AtnEdgeKind
+    target*: int
+    rule*: int
+    tokens*: seq[int]
+    minimumPrecedence*: int
+
+  AtnStateData* = object
+    edges*: seq[AtnEdgeData]
+
+  AtnDecisionData* = object
+    state*: int
+    alternatives*: seq[int]
+    rule*: int
+    alternativeIds*: seq[int]
+    minimums*: seq[int]
+
+  AtnRuleData* = object
+    start*, stop*: int
+
+  PredictionCache* = ref object
+    entries: Table[string, int]
+
   SourceText = ref object
     data: string
 
@@ -54,6 +78,8 @@ type
     failAt: int             ## farthest token where a match failed
     failExpected: seq[int]  ## token kinds expected there
     rules: seq[int]         ## the rules being parsed, innermost last
+    returnStates*: seq[int] ## ATN return state for each active rule call
+    precedences*: seq[int]  ## precedence argument for each active rule call
     speculating: int        ## speculative parses in progress
     recovering: bool        ## an error was reported and no token matched since
     reportedAt: int         ## token of the last reported error
@@ -66,11 +92,30 @@ type
     node: ParseNode[K, L, T]
     sons: int
     rules: int
+    returnStates: int
+    precedences: int
     recovering: bool
 
   TreeNames* = object
     ## Display names by ordinal, for `treeRepr`.
     kinds*, labels*, tokens*: seq[string]
+
+  AtnConfig = object
+    state, alternative: int
+    stack: int
+    precedence: int
+
+  GssNode = object
+    returnState, parent, precedence: int
+
+  GssKey = object
+    returnState, parent, precedence: int
+
+  Gss = object
+    nodes: seq[GssNode]
+    indices: Table[GssKey, int]
+
+proc report[K, L, T](p: var ParserState[K, L, T])
 
 # ---- tree access ----
 
@@ -186,6 +231,185 @@ func expectedMessage*(expected: openArray[string], found: string): string =
 
 func peek*[K, L, T](p: ParserState[K, L, T]): T = p.tokens[p.i].kind
 
+proc newPredictionCache*(): PredictionCache =
+  PredictionCache(entries: initTable[string, int]())
+
+func `==`(a, b: AtnConfig): bool =
+  a.state == b.state and a.alternative == b.alternative and
+    a.stack == b.stack and a.precedence == b.precedence
+
+func `==`(a, b: GssKey): bool =
+  a.returnState == b.returnState and a.parent == b.parent and
+    a.precedence == b.precedence
+
+func hash(c: AtnConfig): Hash =
+  result = hash(c.state)
+  result = result !& hash(c.alternative)
+  result = result !& hash(c.stack)
+  result = result !& hash(c.precedence)
+  result = !$result
+
+func hash(k: GssKey): Hash =
+  result = hash(k.returnState)
+  result = result !& hash(k.parent)
+  result = result !& hash(k.precedence)
+  result = !$result
+
+proc push(gss: var Gss, returnState, parent, precedence: int): int =
+  let key = GssKey(returnState: returnState, parent: parent, precedence: precedence)
+  if key in gss.indices: return gss.indices[key]
+  result = gss.nodes.len + 1
+  gss.nodes.add GssNode(returnState: returnState, parent: parent,
+    precedence: precedence)
+  gss.indices[key] = result
+
+proc atnClosure(seed: seq[AtnConfig], states: openArray[AtnStateData],
+    rules: openArray[AtnRuleData], stopRules: openArray[int],
+    gss: var Gss): seq[AtnConfig] =
+  var queue = seed
+  var seen = initHashSet[AtnConfig]()
+  var i = 0
+  while i < queue.len:
+    let c = queue[i]
+    inc i
+    if c in seen: continue
+    seen.incl c
+    if c.state < 0: continue
+    let rule = stopRules[c.state]
+    if rule >= 0:
+      var next = c
+      if next.stack > 0:
+        let frame = gss.nodes[next.stack - 1]
+        next.stack = frame.parent
+        next.state = frame.returnState
+        next.precedence = frame.precedence
+      else:
+        next.state = -1
+      queue.add next
+      continue
+    for edge in states[c.state].edges:
+      case edge.kind
+      of atEpsilon:
+        if edge.minimumPrecedence < 0 or c.precedence <= edge.minimumPrecedence:
+          var next = c
+          next.state = edge.target
+          queue.add next
+      of atCall:
+        var next = c
+        next.state = rules[edge.rule].start
+        next.stack = gss.push(edge.target, c.stack, c.precedence)
+        next.precedence = edge.minimumPrecedence
+        queue.add next
+      of atTokens:
+        discard
+  result = toSeq(seen.items)
+
+proc expectedAtn(configs: openArray[AtnConfig], states: openArray[AtnStateData]): seq[int] =
+  var expected = initHashSet[int]()
+  for c in configs:
+    if c.state >= 0:
+      for edge in states[c.state].edges:
+        if edge.kind == atTokens:
+          for kind in edge.tokens: expected.incl kind
+  result = toSeq(expected.items)
+  result.sort()
+
+proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
+    states: openArray[AtnStateData], decisions: openArray[AtnDecisionData],
+    rules: openArray[AtnRuleData], cache: PredictionCache = nil,
+    precedence = 0): int =
+  ## Full-context ATN prediction. It explores alternatives in lockstep and
+  ## resumes each completed rule through the active call-site return states.
+  let d = decisions[decision]
+  var stopRules = newSeq[int](states.len)
+  for id in stopRules.mitems: id = -1
+  for rule, info in rules:
+    if info.start != info.stop: stopRules[info.stop] = rule
+  var gss = Gss(indices: initTable[GssKey, int]())
+  var context = 0
+  for i, returnState in p.returnStates:
+    # On return from this frame, restore the caller's precedence. The current
+    # frame's precedence applies only while executing this rule.
+    let callerPrecedence = if i > 0: p.precedences[i - 1] else: p.precedences[i]
+    context = gss.push(returnState, context, callerPrecedence)
+  var configs: seq[AtnConfig]
+  for position, state in d.alternatives:
+    let minimum = if position < d.minimums.len: d.minimums[position] else: -1
+    if minimum >= 0 and precedence > minimum: continue
+    let alternative = if position < d.alternativeIds.len:
+      d.alternativeIds[position] else: position
+    configs.add AtnConfig(state: state, alternative: alternative,
+      stack: context, precedence: precedence)
+  var offset = p.i
+  var key = $decision & ":" & $precedence & ":"
+  for i, state in p.returnStates:
+    key.add $state & ":" & $p.precedences[i] & ","
+  key.add "|"
+  while true:
+    let kind = ord(p.tokens[offset].kind)
+    key.add $kind & ","
+    if cache != nil and cache.entries.hasKey(key): return cache.entries[key]
+    configs = atnClosure(configs, states, rules, stopRules, gss)
+    if kind == 0:
+      var accepted = high(int)
+      var hasAccepted = false
+      for c in configs:
+        if c.state < 0:
+          accepted = min(accepted, c.alternative)
+          hasAccepted = true
+      if hasAccepted:
+        if cache != nil: cache.entries[key] = accepted
+        return accepted
+    let expected = expectedAtn(configs, states)
+    var next: seq[AtnConfig]
+    for c in configs:
+      if c.state < 0: continue
+      for edge in states[c.state].edges:
+        if edge.kind == atTokens and kind in edge.tokens:
+          var advanced = c
+          advanced.state = edge.target
+          next.add advanced
+    if next.len == 0:
+      # A loop exit is the useful recovery choice when the caller's
+      # continuation cannot match: let the real parser report and recover at
+      # that call site instead of turning prediction failure into a nested
+      # rule error.
+      for alternative in d.alternativeIds:
+        if alternative == high(int): return alternative
+      if expected.len == 0: p.failPrediction(offset, [0])
+      p.failPrediction(offset, expected)
+    configs = atnClosure(next, states, rules, stopRules, gss)
+    var survivors = initHashSet[int]()
+    for c in configs: survivors.incl c.alternative
+    if survivors.len == 1 and kind != 0:
+      for alternative in survivors.items:
+        if cache != nil: cache.entries[key] = alternative
+        return alternative
+    if kind == 0:
+      var accepted = high(int)
+      var hasAccepted = false
+      for c in configs:
+        if c.state < 0:
+          accepted = min(accepted, c.alternative)
+          hasAccepted = true
+      if hasAccepted:
+        if cache != nil: cache.entries[key] = accepted
+        return accepted
+      p.failPrediction(offset, expectedAtn(configs, states))
+    inc offset
+
+proc failPrediction*[K, L, T](p: var ParserState[K, L, T], at: int,
+    expected: openArray[int]) {.noreturn.} =
+  ## Reports a no-viable-alternative failure at the farthest token examined.
+  if at > p.failAt:
+    p.failAt = at
+    p.failExpected.setLen 0
+  if at == p.failAt:
+    for kind in expected:
+      if kind notin p.failExpected: p.failExpected.add kind
+  if p.speculating == 0: p.report()
+  raise (ref SyntaxError)(msg: "syntax error", pos: p.tokens[p.i].pos)
+
 proc newNode*[K, L, T](p: ParserState[K, L, T], kind: K): ParseNode[K, L, T] =
   ParseNode[K, L, T](kind: kind, source: p.source)
 
@@ -268,13 +492,19 @@ proc skip[K, L, T](p: var ParserState[K, L, T], err: ParseNode[K, L, T]) =
 proc errorNode[K, L, T](p: ParserState[K, L, T]): ParseNode[K, L, T] =
   p.newNode(K(1))
 
-proc enter*[K, L, T](p: var ParserState[K, L, T], rule: int) =
-  ## Starts parsing rule number `rule`.
+proc enter*[K, L, T](p: var ParserState[K, L, T], rule: int, returnState = -1,
+    precedence = 0) =
+  ## Starts parsing rule number `rule`; `returnState` identifies its ATN
+  ## call-site continuation, or -1 for the start rule.
   p.rules.add rule
+  p.returnStates.add returnState
+  p.precedences.add precedence
 
 proc leave*[K, L, T](p: var ParserState[K, L, T]) =
   ## Ends the innermost rule.
   discard p.rules.pop()
+  discard p.returnStates.pop()
+  discard p.precedences.pop()
 
 proc recover*[K, L, T](p: var ParserState[K, L, T], n: var ParseNode[K, L, T]) =
   ## After a syntax error in the innermost rule, whose node so far is `n`
@@ -317,7 +547,8 @@ proc mark*[K, L, T](p: var ParserState[K, L, T], node: ParseNode[K, L, T]):
   ## Starts a speculative parse at the current position, with the sons of
   ## `node` so far.
   result = Mark[K, L, T](i: p.i, node: node, sons: if node == nil: 0 else: node.sons.len,
-    rules: p.rules.len, recovering: p.recovering)
+    rules: p.rules.len, returnStates: p.returnStates.len,
+    precedences: p.precedences.len, recovering: p.recovering)
   inc p.speculating
 
 proc commit*[K, L, T](p: var ParserState[K, L, T], m: Mark[K, L, T]) =
@@ -331,6 +562,8 @@ proc reset*[K, L, T](p: var ParserState[K, L, T], node: var ParseNode[K, L, T],
   node = m.node
   if node != nil: node.sons.setLen m.sons
   p.rules.setLen m.rules
+  p.returnStates.setLen m.returnStates
+  p.precedences.setLen m.precedences
   p.recovering = m.recovering
   dec p.speculating
 

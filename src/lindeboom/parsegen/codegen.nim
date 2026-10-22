@@ -104,24 +104,25 @@ func groups(sets: seq[TokenSet]): seq[Group] =
   for cands, tokens in byCands: result.add (cands, tokens)
   result.sort(cmpGroups)
 
-proc genCandidates(g: var Gen, alts: seq[GExpr], kinds: seq[string], cands: seq[int],
-    label: string, indent: int) =
-  ## Tries `cands` in order, backtracking from all but the last.
-  let i = cands[0]
-  let ind = if cands.len > 1: indent + 1 else: indent
-  if cands.len > 1:
-    g.line(indent, "let m = p.mark(result)")
-    g.line(indent, "try:")
-  if kinds[i].len > 0: g.line(ind, "result = p.newNode(" & kinds[i] & ")")
-  g.genBody(alts[i], label, ind)
-  if cands.len > 1:
-    g.line(ind, "p.commit(m)")
-    g.line(indent, "except SyntaxError:")
-    g.line(indent + 1, "p.reset(result, m)")
-    g.genCandidates(alts, kinds, cands[1 .. ^1], label, indent + 1)
+func overlaps(sets: seq[TokenSet]): bool =
+  for i, left in sets:
+    for j in i + 1 .. sets.high:
+      if (left * sets[j]).len > 0: return true
+
+proc genAdaptiveDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string],
+    decision, label: string, indent: int) =
+  g.line(indent, "case p.predict(" & decision &
+    ", atnStates, atnDecisions, atnRules, predictionCache)")
+  for i, alt in alts:
+    g.line(indent, "of " & $i & ":")
+    if kinds[i].len > 0:
+      g.line(indent + 1, "result = p.newNode(" & kinds[i] & ")")
+    g.genBody(alt, label, indent + 1)
+  g.line(indent, "else:")
+  g.wrapped(indent + 1, "p.fail({", g.idents(g.a.expected(alts)), "})")
 
 proc genDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string], label: string,
-    indent: int) =
+    indent: int, decision = -1) =
   ## `case p.peek` choosing between `alts`; a non-empty `kinds[i]` starts a
   ## new node of that kind for alternative i.
   ## Tokens that only follow the alternatives expect what could have started
@@ -132,17 +133,25 @@ proc genDecision(g: var Gen, alts: seq[GExpr], kinds: seq[string], label: string
     sets.add g.a.predict(alt)
     all.incl sets[^1]
     first.incl g.a.first(alt)
+  if decision >= 0 and sets.overlaps:
+    g.genAdaptiveDecision(alts, kinds, $decision, label, indent)
+    return
   g.line(indent, "case p.peek")
   for (cands, tokens) in groups(sets):
     let starting = tokens * first
     let following = tokens - first
+    if cands.len != 1:
+      raiseAssert "overlapping alternatives must have an ATN decision"
+    let i = cands[0]
     if starting.len > 0:
       g.wrapped(indent, "of ", g.idents(starting), ":")
-      g.genCandidates(alts, kinds, cands, label, indent + 1)
+      if kinds[i].len > 0: g.line(indent + 1, "result = p.newNode(" & kinds[i] & ")")
+      g.genBody(alts[i], label, indent + 1)
     if following.len > 0:
       g.wrapped(indent, "of ", g.idents(following), ":")
       if first.len > 0: g.wrapped(indent + 1, "p.expect({", g.idents(first), "})")
-      g.genCandidates(alts, kinds, cands, label, indent + 1)
+      if kinds[i].len > 0: g.line(indent + 1, "result = p.newNode(" & kinds[i] & ")")
+      g.genBody(alts[i], label, indent + 1)
   if all.len < g.a.v.tokens.len:
     g.line(indent, "else:")
     g.wrapped(indent + 1, "p.fail({", g.idents(g.a.expected(alts)), "})")
@@ -153,18 +162,15 @@ proc genMore(g: var Gen, e: GExpr, head, tail: string, indent: int) =
     g.idents(g.a.grammarFollow(e))], ")" & tail)
 
 proc genIteration(g: var Gen, e: GExpr, label: string, indent: int) =
-  ## One more iteration of `*` or `+` inside its `while`; when ambiguous,
-  ## leaves the loop if it fails.
-  if g.a.isAmbiguous(e):
-    g.line(indent, "let m = p.mark(result)")
-    g.line(indent, "try:")
-    g.genBody(e.inner, label, indent + 1)
-    g.line(indent + 1, "p.commit(m)")
-    g.line(indent, "except SyntaxError:")
-    g.line(indent + 1, "p.reset(result, m)")
-    g.line(indent + 1, "break")
-  else:
-    g.genBody(e.inner, label, indent)
+  ## One iteration in a LL(1) loop.
+  g.genBody(e.inner, label, indent)
+
+proc genPredictedLoop(g: var Gen, e: GExpr, label: string, indent: int) =
+  let decision = $g.a.decisionByExpr[e]
+  g.line(indent, "while p.predict(" & decision &
+    ", atnStates, atnDecisions, atnRules, predictionCache) == 0:")
+  g.genBody(e.inner, label, indent + 1)
+  g.wrapped(indent, "p.expect({", g.idents(g.a.first(e.inner)), "})")
 
 proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
   let label = if e.label.len > 0: g.a.labelIdents[g.a.labelIndex[e.label]] else: label
@@ -175,28 +181,30 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
     of ekSeq:
       for x in e.items: g.genExpr(x, label, indent)
     of ekAlt:
-      g.genDecision(e.items, newSeq[string](e.items.len), label, indent)
+      g.genDecision(e.items, newSeq[string](e.items.len), label, indent,
+        g.a.decisionByExpr.getOrDefault(e, -1))
     of ekOpt:
       g.wrapped(indent, "if p.peek in {", g.idents(g.a.first(e.inner)), "}:")
       if g.a.isAmbiguous(e):
-        g.line(indent + 1, "let m = p.mark(result)")
-        g.line(indent + 1, "try:")
+        g.line(indent + 1, "if p.predict(" & $g.a.decisionByExpr[e] &
+          ", atnStates, atnDecisions, atnRules, predictionCache) == 0:")
         g.genBody(e.inner, label, indent + 2)
-        g.line(indent + 2, "p.commit(m)")
-        g.line(indent + 1, "except SyntaxError:")
-        g.line(indent + 2, "p.reset(result, m)")
+        g.line(indent + 1, "else:")
+        g.wrapped(indent + 2, "p.expect({", g.idents(g.a.first(e.inner)), "})")
       else:
         g.genBody(e.inner, label, indent + 1)
       g.line(indent, "else:")
       g.wrapped(indent + 1, "p.expect({", g.idents(g.a.first(e.inner)), "})")
     of ekStar:
-      g.genMore(e, "while ", ":", indent)
-      g.genIteration(e, label, indent + 1)
+      if g.a.isAmbiguous(e):
+        g.genPredictedLoop(e, label, indent)
+      else:
+        g.genMore(e, "while ", ":", indent)
+        g.genIteration(e, label, indent + 1)
     of ekPlus:
       if g.a.isAmbiguous(e):
         g.genBody(e.inner, label, indent)
-        g.genMore(e, "while ", ":", indent)
-        g.genIteration(e, label, indent + 1)
+        g.genPredictedLoop(e, label, indent)
       else:
         g.line(indent, "while true:")
         g.genBody(e.inner, label, indent + 1)
@@ -206,7 +214,8 @@ proc genExpr(g: var Gen, e: GExpr, label: string, indent: int) =
       let prec =
         if not g.a.isPrecRule[r]: ""
         else: ", " & $g.a.operandPrec.getOrDefault(e)
-      g.line(indent, "result.add(rule" & g.a.ruleIdents[r] & "(p" & prec & ")" &
+      g.line(indent, "result.add(rule" & g.a.ruleIdents[r] & "(p" & prec &
+        ", " & $g.a.callReturn[e] & ")" &
         labelArg(label) & ")")
     of ekLiteral, ekTokenRef:
       g.line(indent, "p.match(result, " & g.a.v.tokens[g.a.tokenKind(e)].ident &
@@ -225,42 +234,46 @@ proc genExtend(g: var Gen, i, k, indent: int) =
 proc genLoop(g: var Gen, i, indent: int) =
   ## The binary and suffix alternatives of precedence rule `i`.
   let r = g.a.g.rules[i]
-  var loopAlts: seq[int]
-  var sets: seq[TokenSet]
+  g.line(indent, "while true:")
+  g.line(indent + 1, "case p.predict(" & $g.a.loopDecision[i] &
+    ", atnStates, atnDecisions, atnRules, predictionCache, prec)")
   for k, alt in r.alts:
     if g.a.isLoopAlt(i, k):
-      loopAlts.add k
-      sets.add g.a.continuation(alt.body)
-  g.line(indent, "while true:")
-  g.line(indent + 1, "case p.peek")
-  for (cands, tokens) in groups(sets):
-    g.wrapped(indent + 1, "of ", g.idents(tokens), ":")
-    if cands.len == 1:
-      let k = loopAlts[cands[0]]
-      g.line(indent + 2, "if prec > " & $g.a.precedence(i, k) & ": break")
+      g.line(indent + 1, "of " & $k & ":")
       g.genExtend(i, k, indent + 2)
-    else:
-      # all but the last are tried speculatively
-      g.line(indent + 2, "var done = false")
-      for j, c in cands:
-        let k = loopAlts[c]
-        g.line(indent + 2, (if j > 0: "if not done and " else: "if ") & "prec <= " &
-          $g.a.precedence(i, k) & ":")
-        if j < cands.high:
-          g.line(indent + 3, "let m = p.mark(result)")
-          g.line(indent + 3, "try:")
-          g.genExtend(i, k, indent + 4)
-          g.line(indent + 4, "p.commit(m)")
-          g.line(indent + 4, "done = true")
-          g.line(indent + 3, "except SyntaxError:")
-          g.line(indent + 4, "p.reset(result, m)")
-        else:
-          g.genExtend(i, k, indent + 3)
-          g.line(indent + 3, "done = true")
-      g.line(indent + 2, "if not done: break")
+  g.line(indent + 1, "of high(int): break")
   g.line(indent + 1, "else:")
-  g.wrapped(indent + 2, "p.expect({", g.idents(g.a.loopContinuation(i)), "})")
-  g.line(indent + 2, "break")
+  g.wrapped(indent + 2, "p.fail({", g.idents(g.a.loopContinuation(i)), "})")
+
+proc genAtnData(g: var Gen) =
+  ## Emits the analyzed network in a runtime-neutral form used by both the
+  ## interpreter and generated parser.
+  g.s.add "const atnStates: seq[AtnStateData] = @[\n"
+  for state in g.a.atn:
+    g.line(1, "AtnStateData(edges: @[")
+    for edge in state.edges:
+      let kind = $edge.kind
+      var tokens: seq[string]
+      for k in edge.tokens: tokens.add $k
+      g.line(2, "AtnEdgeData(kind: " & kind & ", target: " & $edge.target &
+        ", rule: " & $edge.rule & ", tokens: @[" & tokens.join(", ") &
+        "], minimumPrecedence: " & $edge.minimumPrecedence & "),")
+    g.line(1, "]),")
+  g.s.add "]\n\nconst atnDecisions: seq[AtnDecisionData] = @[\n"
+  for decision in g.a.decisions:
+    var alternatives: seq[string]
+    for state in decision.alternatives: alternatives.add $state
+    var ids, minimums: seq[string]
+    for id in decision.alternativeIds: ids.add $id
+    for minimum in decision.minimums: minimums.add $minimum
+    g.line(1, "AtnDecisionData(state: " & $decision.state & ", rule: " &
+      $decision.rule & ", alternatives: @[" & alternatives.join(", ") &
+      "], alternativeIds: @[" & ids.join(", ") & "], minimums: @[" &
+      minimums.join(", ") & "]),")
+  g.s.add "]\n\nconst atnRules: seq[AtnRuleData] = @[\n"
+  for rule in g.a.atRules:
+    g.line(1, "AtnRuleData(start: " & $rule.start & ", stop: " & $rule.stop & "),")
+  g.s.add "]\n\nvar predictionCache = newPredictionCache()\n\n"
 
 proc genRule(g: var Gen, i, number: int) =
   ## Rule `i`, rule number `number` for recovery.
@@ -268,7 +281,7 @@ proc genRule(g: var Gen, i, number: int) =
   let labelled = r.alts[0].label.len > 0
   let prec = g.a.isPrecRule[i]
   g.line(0, "proc rule" & g.a.ruleIdents[i] & "(p: var Parser" &
-    (if prec: ", prec: int" else: "") & "): Node =")
+    (if prec: ", prec: int" else: "") & ", returnState: int): Node =")
   g.line(1, "## `" & r.name & "`, line " & $r.pos.line)
   var kinds: seq[string]
   var heads: seq[GExpr]
@@ -278,13 +291,14 @@ proc genRule(g: var Gen, i, number: int) =
       heads.add alt.body
   if not labelled:
     g.line(1, "result = p.newNode(" & g.a.kindIdents[g.a.altKinds[i][0]] & ")")
-  g.line(1, "p.enter(" & $number & ")")
+  g.line(1, "p.enter(" & $number & ", returnState, " &
+    (if prec: "prec" else: "0") & ")")
   g.line(1, "try:")
   if heads.len == 1:
     if labelled: g.line(2, "result = p.newNode(" & kinds[0] & ")")
     g.genBody(heads[0], "", 2)
   else:
-    g.genDecision(heads, kinds, "", 2)
+    g.genDecision(heads, kinds, "", 2, g.a.ruleDecision[i])
   if prec: g.genLoop(i, 2)
   g.line(1, "except SyntaxError:")
   g.line(2, "p.recover(result)")
@@ -308,6 +322,8 @@ proc genParserModule*(a: Analysis, grammarFile: string,
   g.s.add "\n  Node* = ParseNode[NodeKind, NodeLabel, TokenKind]\n"
   g.s.add "  Parser = ParserState[NodeKind, NodeLabel, TokenKind]\n\n"
 
+  g.genAtnData()
+
   for k in 1 .. a.labels.high:
     if a.labelIsList[k]:
       g.line(0, "func " & procName(a.labels[k]) & "*(n: Node): seq[Node] = n.sonsWith(" &
@@ -319,7 +335,7 @@ proc genParserModule*(a: Analysis, grammarFile: string,
 
   for i in a.parserRules:
     g.line(0, "proc rule" & a.ruleIdents[i] & "(p: var Parser" &
-      (if a.isPrecRule[i]: ", prec: int" else: "") & "): Node")
+      (if a.isPrecRule[i]: ", prec: int" else: "") & ", returnState: int): Node")
   g.s.add "\n"
   for number, i in a.parserRules: g.genRule(i, number)
 
@@ -357,9 +373,7 @@ proc parseWith(src, filename: string, formatter: SyntaxErrorFormatter,
       "    formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =\n"
     g.line(1, "## Parses `src` with rule `" & r.name & "`. A `formatter` words the")
     g.line(1, "## syntax errors instead of the default messages.")
-    if a.isPrecRule[i]:
-      g.line(1, "parseWith(src, filename, formatter, proc (p: var Parser): Node =")
-      g.line(2, "rule" & a.ruleIdents[i] & "(p, 0))")
-    else:
-      g.line(1, "parseWith(src, filename, formatter, rule" & a.ruleIdents[i] & ")")
+    g.line(1, "parseWith(src, filename, formatter, proc (p: var Parser): Node =")
+    g.line(2, "rule" & a.ruleIdents[i] & "(p" &
+      (if a.isPrecRule[i]: ", 0" else: "") & ", -1))")
   g.s

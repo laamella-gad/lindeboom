@@ -29,39 +29,174 @@ type
   Node* = ParseNode[NodeKind, NodeLabel, TokenKind]
   Parser = ParserState[NodeKind, NodeLabel, TokenKind]
 
+const atnStates: seq[AtnStateData] = @[
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 2, rule: 1, tokens: @[], minimumPrecedence: 0),
+  ]),
+  AtnStateData(edges: @[
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 1, rule: -1, tokens: @[0], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 5, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 13, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 21, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 23, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 25, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 27, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 29, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 7, rule: -1, tokens: @[1], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 9, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 8, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 6, rule: -1, tokens: @[3], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 10, rule: 2, tokens: @[], minimumPrecedence: 0),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 11, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 8, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 12, rule: -1, tokens: @[2], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 10, rule: 2, tokens: @[], minimumPrecedence: 0),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 15, rule: -1, tokens: @[4], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 17, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 16, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 14, rule: -1, tokens: @[5], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 18, rule: 1, tokens: @[], minimumPrecedence: 0),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 19, rule: -1, tokens: @[], minimumPrecedence: -1),
+    AtnEdgeData(kind: atEpsilon, target: 16, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 20, rule: -1, tokens: @[2], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 18, rule: 1, tokens: @[], minimumPrecedence: 0),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 22, rule: -1, tokens: @[10], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 24, rule: -1, tokens: @[11], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 26, rule: -1, tokens: @[6], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 28, rule: -1, tokens: @[7], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 30, rule: -1, tokens: @[8], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atEpsilon, target: 4, rule: -1, tokens: @[], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 33, rule: -1, tokens: @[10], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atTokens, target: 34, rule: -1, tokens: @[9], minimumPrecedence: -1),
+  ]),
+  AtnStateData(edges: @[
+    AtnEdgeData(kind: atCall, target: 32, rule: 1, tokens: @[], minimumPrecedence: 0),
+  ]),
+]
+
+const atnDecisions: seq[AtnDecisionData] = @[
+  AtnDecisionData(state: 10, rule: 1, alternatives: @[11, 8], alternativeIds: @[], minimums: @[]),
+  AtnDecisionData(state: 7, rule: 1, alternatives: @[9, 8], alternativeIds: @[], minimums: @[]),
+  AtnDecisionData(state: 18, rule: 1, alternatives: @[19, 16], alternativeIds: @[], minimums: @[]),
+  AtnDecisionData(state: 15, rule: 1, alternatives: @[17, 16], alternativeIds: @[], minimums: @[]),
+  AtnDecisionData(state: 3, rule: 1, alternatives: @[5, 13, 21, 23, 25, 27, 29], alternativeIds: @[], minimums: @[]),
+]
+
+const atnRules: seq[AtnRuleData] = @[
+  AtnRuleData(start: 0, stop: 1),
+  AtnRuleData(start: 3, stop: 4),
+  AtnRuleData(start: 31, stop: 32),
+  AtnRuleData(start: 0, stop: 0),
+  AtnRuleData(start: 0, stop: 0),
+  AtnRuleData(start: 0, stop: 0),
+  AtnRuleData(start: 0, stop: 0),
+]
+
+var predictionCache = newPredictionCache()
+
 func members*(n: Node): seq[Node] = n.sonsWith(lbMembers)
 func elements*(n: Node): seq[Node] = n.sonsWith(lbElements)
 func key*(n: Node): Node = n.son(lbKey)
 func value*(n: Node): Node = n.son(lbValue)
 
-proc ruleJson(p: var Parser): Node
-proc ruleValue(p: var Parser): Node
-proc rulePair(p: var Parser): Node
+proc ruleJson(p: var Parser, returnState: int): Node
+proc ruleValue(p: var Parser, returnState: int): Node
+proc rulePair(p: var Parser, returnState: int): Node
 
-proc ruleJson(p: var Parser): Node =
+proc ruleJson(p: var Parser, returnState: int): Node =
   ## `json`, line 4
   result = p.newNode(nkJson)
-  p.enter(0)
+  p.enter(0, returnState, 0)
   try:
-    result.add(ruleValue(p))
+    result.add(ruleValue(p, 2))
     p.match(result, tkEOF)
   except SyntaxError:
     p.recover(result)
   p.leave()
 
-proc ruleValue(p: var Parser): Node =
+proc ruleValue(p: var Parser, returnState: int): Node =
   ## `value`, line 5
-  p.enter(1)
+  p.enter(1, returnState, 0)
   try:
     case p.peek
     of tkLBrace:
       result = p.newNode(nkObject)
       p.match(result, tkLBrace)
       if p.peek in {tkSTRING}:
-        result.add(rulePair(p), lbMembers)
+        result.add(rulePair(p, 10), lbMembers)
         while p.more(result, {tkComma}, {tkRBrace}):
           p.match(result, tkComma)
-          result.add(rulePair(p), lbMembers)
+          result.add(rulePair(p, 10), lbMembers)
       else:
         p.expect({tkSTRING})
       p.match(result, tkRBrace)
@@ -70,10 +205,10 @@ proc ruleValue(p: var Parser): Node =
       p.match(result, tkLBracket)
       if p.peek in {tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
           tkNUMBER}:
-        result.add(ruleValue(p), lbElements)
+        result.add(ruleValue(p, 18), lbElements)
         while p.more(result, {tkComma}, {tkRBracket}):
           p.match(result, tkComma)
-          result.add(ruleValue(p), lbElements)
+          result.add(ruleValue(p, 18), lbElements)
       else:
         p.expect({tkLBrace, tkLBracket, tkTrue, tkFalse, tkNull, tkSTRING,
             tkNUMBER})
@@ -100,14 +235,14 @@ proc ruleValue(p: var Parser): Node =
     p.recover(result)
   p.leave()
 
-proc rulePair(p: var Parser): Node =
+proc rulePair(p: var Parser, returnState: int): Node =
   ## `pair`, line 13
   result = p.newNode(nkPair)
-  p.enter(2)
+  p.enter(2, returnState, 0)
   try:
     p.match(result, tkSTRING, lbKey)
     p.match(result, tkColon)
-    result.add(ruleValue(p), lbValue)
+    result.add(ruleValue(p, 32), lbValue)
   except SyntaxError:
     p.recover(result)
   p.leave()
@@ -141,16 +276,19 @@ proc parseJson*(src: string, filename = "input",
     formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
   ## Parses `src` with rule `json`. A `formatter` words the
   ## syntax errors instead of the default messages.
-  parseWith(src, filename, formatter, ruleJson)
+  parseWith(src, filename, formatter, proc (p: var Parser): Node =
+    ruleJson(p, -1))
 
 proc parseValue*(src: string, filename = "input",
     formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
   ## Parses `src` with rule `value`. A `formatter` words the
   ## syntax errors instead of the default messages.
-  parseWith(src, filename, formatter, ruleValue)
+  parseWith(src, filename, formatter, proc (p: var Parser): Node =
+    ruleValue(p, -1))
 
 proc parsePair*(src: string, filename = "input",
     formatter: SyntaxErrorFormatter = nil): ParseResult[Node] =
   ## Parses `src` with rule `pair`. A `formatter` words the
   ## syntax errors instead of the default messages.
-  parseWith(src, filename, formatter, rulePair)
+  parseWith(src, filename, formatter, proc (p: var Parser): Node =
+    rulePair(p, -1))

@@ -40,6 +40,21 @@ block parsecodegen_matches_interpreter:
       doAssert got[i] == expected, c.grammarFile & " " & input.escape & ":\n" & got[i] &
         "\nexpected:\n" & expected
 
+block parsecodegen_prediction_uses_active_call_context:
+  let dir = tmp / "active_call_context"
+  let grammarFile = dir / "context.ldb"
+  createDir(dir)
+  writeFile(grammarFile, "grammar Context;\n" &
+    "s : a 'z' ;\na : 'x' | 'x' 'y' ;\nWS : [ ]+ -> skip ;\n")
+  let c = Case(grammarFile: grammarFile, inputs: @["x y z", "x z", "x y z"])
+  let a = generate(c, dir, standalone = false)
+  let got = runDriver(compile(dir, standalone = false), dir, c.inputs)
+  var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
+  let t = buildLexer(g, a.v, d)
+  for i, input in c.inputs:
+    let expected = interpreted(a, t, input)
+    doAssert got[i] == expected, got[i] & "\nexpected:\n" & expected
+
 block parsecodegen_standalone:
   let c = cases[2]
   let dir = tmp / "standalone"
