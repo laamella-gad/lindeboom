@@ -30,6 +30,7 @@ proc checkGolden(grammarFile: string) =
 proc build(source: string): string =
   result = tmp / source.splitFile.name
   let (output, code) = execCmdEx("nim c --hints:off --path:" & quoteShell(root / "src") &
+    " --nimcache:" & quoteShell(result & "_nimcache") &
     " -o:" & quoteShell(result) & " " & quoteShell(source))
   doAssert code == 0, output
 

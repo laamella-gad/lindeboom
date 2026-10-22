@@ -318,6 +318,16 @@ block parsegen_nested_shared_prefix_stress:
   for _ in 0 ..< 17: input.add "y "
   let got = tree(g(rules), input)
   doAssert got.startsWith("s\n└── a\n"), got
+  # Callers that differ only in which alternative called `a` share one stack,
+  # so configurations stay linear in the nesting depth.
+  var (a, t, _) = analyzed(g(rules))
+  a.predictionCache = newPredictionCache(trackWork = true)
+  var diagnostics = Diagnostics(filename: "input")
+  let n = a.interpret(tokenize[int](t, input, diagnostics), input,
+    a.parserRules[0], diagnostics)
+  doAssert n != nil and not diagnostics.hasErrors, $diagnostics.items
+  doAssert a.predictionCache.predictionWork < 100_000,
+    $a.predictionCache.predictionWork
 
 block parsegen_ambiguous_loop_work_is_bounded:
   var previous = 0

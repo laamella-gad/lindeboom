@@ -51,6 +51,7 @@ proc compile*(dir: string, standalone: bool): string =
   result = dir / "driver"
   let path = if standalone: "" else: " --path:" & quoteShell(root / "src")
   let (output, code) = execCmdEx("nim c --hints:off --warningAsError:UnusedImport" & path &
+    " --nimcache:" & quoteShell(dir / "nimcache") &
     " -o:" & quoteShell(result) & " " & quoteShell(dir / "driver.nim"))
   doAssert code == 0, output
 

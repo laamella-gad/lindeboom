@@ -107,8 +107,13 @@ type
     returnState, parent, precedence: int
 
   Gss = ref object
+    ## Call stacks of ATN configurations, as in ANTLR's merged contexts: a
+    ## stack is an interned set of frames (id 0 is the bottom of the stack),
+    ## so configurations that differ only in their callers share one entry.
     nodes: seq[GssNode]
     indices: Table[GssKey, int]
+    sets: seq[seq[int]]
+    setIndices: Table[seq[int], int]
 
   PredictionDfaState = object
     configs: seq[AtnConfig]
@@ -235,7 +240,8 @@ func peek*[K, L, T](p: ParserState[K, L, T]): T = p.tokens[p.i].kind
 proc newPredictionCache*(trackWork = false): PredictionCache =
   PredictionCache(entries: initTable[string, int](),
     dfaIndices: initTable[string, int](),
-    gss: Gss(indices: initTable[GssKey, int]()), trackWork: trackWork)
+    gss: Gss(indices: initTable[GssKey, int](),
+      setIndices: initTable[seq[int], int]()), trackWork: trackWork)
 
 func predictionWork*(cache: PredictionCache): int =
   ## Number of ATN configurations processed by predictions using this cache.
@@ -288,32 +294,73 @@ proc push(gss: Gss, returnState, parent, precedence: int): int =
     precedence: precedence)
   gss.indices[key] = result
 
+proc intern(gss: Gss, frames: seq[int]): int =
+  ## Id of the stack made of the sorted `frames`.
+  if frames in gss.setIndices: return gss.setIndices[frames]
+  gss.sets.add frames
+  result = gss.sets.len
+  gss.setIndices[frames] = result
+
+proc bottom(gss: Gss): int = gss.intern(@[0])
+
+proc single(gss: Gss, frame: int): int = gss.intern(@[frame])
+
+proc union(gss: Gss, a, b: int): int =
+  if a == b: return a
+  var merged: seq[int]
+  let x = gss.sets[a - 1]
+  let y = gss.sets[b - 1]
+  var i, j = 0
+  while i < x.len or j < y.len:
+    if j == y.len or (i < x.len and x[i] < y[j]):
+      merged.add x[i]
+      inc i
+    elif i == x.len or y[j] < x[i]:
+      merged.add y[j]
+      inc j
+    else:
+      merged.add x[i]
+      inc i
+      inc j
+  gss.intern(merged)
+
 proc atnClosure(seed: seq[AtnConfig], states: openArray[AtnStateData],
     rules: openArray[AtnRuleData], stopRules: openArray[int],
     gss: Gss, cache: PredictionCache = nil): seq[AtnConfig] =
   # `seq` assignment aliases its backing storage. DFA transitions feed cached
   # configuration sets back into closure, so the work queue must own its copy.
   var queue = @seed
-  var seen = initHashSet[AtnConfig]()
+  # Configurations that differ only in their stack are merged into one with
+  # the union of the stacks; a config is expanded again when its stack grows.
+  var current = initTable[(int, int, int), int]()
+  var order: seq[(int, int, int)]
   var i = 0
   while i < queue.len:
-    let c = queue[i]
+    var c = queue[i]
     inc i
     if cache != nil and cache.trackWork: inc cache.work
-    if c in seen: continue
-    seen.incl c
+    let key = (c.state, c.alternative, c.precedence)
+    if key in current:
+      let merged = gss.union(current[key], c.stack)
+      if merged == current[key]: continue
+      c.stack = merged
+    else:
+      order.add key
+    current[key] = c.stack
     if c.state < 0: continue
     let rule = stopRules[c.state]
     if rule >= 0:
-      var next = c
-      if next.stack > 0:
-        let frame = gss.nodes[next.stack - 1]
-        next.stack = frame.parent
-        next.state = frame.returnState
-        next.precedence = frame.precedence
-      else:
-        next.state = -1
-      queue.add next
+      for frameId in gss.sets[c.stack - 1]:
+        var next = c
+        if frameId > 0:
+          let frame = gss.nodes[frameId - 1]
+          next.stack = frame.parent
+          next.state = frame.returnState
+          next.precedence = frame.precedence
+        else:
+          next.stack = gss.bottom
+          next.state = -1
+        queue.add next
       continue
     for edge in states[c.state].edges:
       case edge.kind
@@ -325,12 +372,14 @@ proc atnClosure(seed: seq[AtnConfig], states: openArray[AtnStateData],
       of atCall:
         var next = c
         next.state = rules[edge.rule].start
-        next.stack = gss.push(edge.target, c.stack, c.precedence)
+        next.stack = gss.single(gss.push(edge.target, c.stack, c.precedence))
         next.precedence = edge.minimumPrecedence
         queue.add next
       of atTokens:
         discard
-  result = toSeq(seen.items)
+  for key in order:
+    result.add AtnConfig(state: key[0], alternative: key[1], precedence: key[2],
+      stack: current[key])
 
 proc conflicting(configs: openArray[AtnConfig]): bool =
   ## ANTLR's termination test: every (state, context) is reachable through
@@ -377,13 +426,13 @@ proc predictOne[K, L, T](p: var ParserState[K, L, T], decision: int,
     for rule, info in rules:
       if info.start != info.stop: activeCache.stopRules[info.stop] = rule
   template stopRules: untyped = activeCache.stopRules
-  var context = 0
+  var context = gss.bottom
   if fullContext:
     for i, returnState in p.returnStates:
       # On return from this frame, restore the caller's precedence. The
       # current frame's precedence applies only while executing this rule.
       let callerPrecedence = if i > 0: p.precedences[i - 1] else: p.precedences[i]
-      context = gss.push(returnState, context, callerPrecedence)
+      context = gss.single(gss.push(returnState, context, callerPrecedence))
   var configs: seq[AtnConfig]
   for position, state in d.alternatives:
     let minimum = if position < d.minimums.len: d.minimums[position] else: -1

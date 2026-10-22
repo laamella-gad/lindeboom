@@ -28,6 +28,7 @@ doAssert d.items.len == 0
 block lexcodegen_module_matches_interpreter:
   let exe = dir / "driver"
   let (output, code) = execCmdEx("nim c --hints:off --path:" & quoteShell(root / "src") &
+    " --nimcache:" & quoteShell(dir / "nimcache") &
     " -o:" & quoteShell(exe) & " " & quoteShell(dir / "driver.nim"))
   doAssert code == 0, output
   let (generated, runCode) = execCmdEx(quoteShell(exe) & " " & quoteShell(inputFile))
