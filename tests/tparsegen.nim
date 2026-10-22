@@ -231,6 +231,28 @@ block parsegen_adaptive_alternatives:
         └── 'a'
     """)
 
+  # Figure 1 of Parr, Harwell and Fisher: both statement alternatives begin
+  # with an expression, so prediction must consider the caller continuation.
+  let stat = "stat : e '=' e ';' | e ';' ;\n" &
+    "e : e '*' e | e '+' e | e '(' e ')' | ID ;"
+  expectTree(stat, "a+b=c*d;", """
+    stat
+    ├── e
+    │   ├── e
+    │   │   └── ID "a"
+    │   ├── '+'
+    │   └── e
+    │       └── ID "b"
+    ├── '='
+    ├── e
+    │   ├── e
+    │   │   └── ID "c"
+    │   ├── '*'
+    │   └── e
+    │       └── ID "d"
+    └── ';'
+    """)
+
 block parsegen_backtracking_loops:
   let rules = "s : ID (',' ID)* ','? ;"
   expectTree(rules, "a, b,", """

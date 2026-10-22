@@ -55,6 +55,24 @@ block parsecodegen_prediction_uses_active_call_context:
     let expected = interpreted(a, t, input)
     doAssert got[i] == expected, got[i] & "\nexpected:\n" & expected
 
+block parsecodegen_paper_stat_grammar:
+  let dir = tmp / "paper_stat"
+  let grammarFile = dir / "stat.ldb"
+  createDir(dir)
+  writeFile(grammarFile, "grammar PaperStat;\n" &
+    "stat : e '=' e ';' | e ';' ;\n" &
+    "e : e '*' e | e '+' e | e '(' e ')' | ID ;\n" &
+    "ID : [a-z]+ ; WS : [ ]+ -> skip ;\n")
+  let c = Case(grammarFile: grammarFile,
+    inputs: @["a+b=c*d;", "a;", "f(a)+b=c;"])
+  let a = generate(c, dir, standalone = false)
+  let got = runDriver(compile(dir, standalone = false), dir, c.inputs)
+  var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
+  let t = buildLexer(g, a.v, d)
+  for i, input in c.inputs:
+    let expected = interpreted(a, t, input)
+    doAssert got[i] == expected, got[i] & "\nexpected:\n" & expected
+
 block parsecodegen_standalone:
   let c = cases[2]
   let dir = tmp / "standalone"

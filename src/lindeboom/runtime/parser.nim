@@ -44,7 +44,9 @@ type
     start*, stop*: int
 
   PredictionCache* = ref object
-    entries: Table[string, int]
+    entries: Table[string, int] ## full-context prediction results
+    dfaIndices: Table[string, int]
+    dfaStates: seq[PredictionDfaState]
 
   SourceText = ref object
     data: string
@@ -114,6 +116,12 @@ type
   Gss = object
     nodes: seq[GssNode]
     indices: Table[GssKey, int]
+
+  PredictionDfaState = object
+    configs: seq[AtnConfig]
+    transitions: Table[int, int]
+    result: int
+    resolved: bool
 
 proc report[K, L, T](p: var ParserState[K, L, T])
 
@@ -232,7 +240,26 @@ func expectedMessage*(expected: openArray[string], found: string): string =
 func peek*[K, L, T](p: ParserState[K, L, T]): T = p.tokens[p.i].kind
 
 proc newPredictionCache*(): PredictionCache =
-  PredictionCache(entries: initTable[string, int]())
+  PredictionCache(entries: initTable[string, int](),
+    dfaIndices: initTable[string, int]())
+
+proc configSetKey(decision, precedence: int,
+    configs: openArray[AtnConfig]): string =
+  var items: seq[string]
+  for c in configs:
+    items.add $c.state & "," & $c.alternative & "," & $c.stack & "," &
+      $c.precedence
+  items.sort()
+  result = $decision & ":" & $precedence & "|" & items.join(";")
+
+proc dfaState(cache: PredictionCache, decision, precedence: int,
+    configs: seq[AtnConfig]): int =
+  let key = configSetKey(decision, precedence, configs)
+  if key in cache.dfaIndices: return cache.dfaIndices[key]
+  result = cache.dfaStates.len
+  cache.dfaIndices[key] = result
+  cache.dfaStates.add PredictionDfaState(configs: configs,
+    transitions: initTable[int, int]())
 
 func `==`(a, b: AtnConfig): bool =
   a.state == b.state and a.alternative == b.alternative and
@@ -314,12 +341,12 @@ proc expectedAtn(configs: openArray[AtnConfig], states: openArray[AtnStateData])
   result = toSeq(expected.items)
   result.sort()
 
-proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
+proc predictOne[K, L, T](p: var ParserState[K, L, T], decision: int,
     states: openArray[AtnStateData], decisions: openArray[AtnDecisionData],
     rules: openArray[AtnRuleData], cache: PredictionCache = nil,
-    precedence = 0): int =
-  ## Full-context ATN prediction. It explores alternatives in lockstep and
-  ## resumes each completed rule through the active call-site return states.
+    precedence = 0, fullContext = false): int =
+  ## Predicts once in local (SLL) or caller (LL) context. -2 means SLL needs
+  ## full-context retry.
   let d = decisions[decision]
   var stopRules = newSeq[int](states.len)
   for id in stopRules.mitems: id = -1
@@ -327,11 +354,12 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
     if info.start != info.stop: stopRules[info.stop] = rule
   var gss = Gss(indices: initTable[GssKey, int]())
   var context = 0
-  for i, returnState in p.returnStates:
-    # On return from this frame, restore the caller's precedence. The current
-    # frame's precedence applies only while executing this rule.
-    let callerPrecedence = if i > 0: p.precedences[i - 1] else: p.precedences[i]
-    context = gss.push(returnState, context, callerPrecedence)
+  if fullContext:
+    for i, returnState in p.returnStates:
+      # On return from this frame, restore the caller's precedence. The
+      # current frame's precedence applies only while executing this rule.
+      let callerPrecedence = if i > 0: p.precedences[i - 1] else: p.precedences[i]
+      context = gss.push(returnState, context, callerPrecedence)
   var configs: seq[AtnConfig]
   for position, state in d.alternatives:
     let minimum = if position < d.minimums.len: d.minimums[position] else: -1
@@ -340,16 +368,48 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
       d.alternativeIds[position] else: position
     configs.add AtnConfig(state: state, alternative: alternative,
       stack: context, precedence: precedence)
+  var sllCache = cache
+  if not fullContext and sllCache == nil: sllCache = newPredictionCache()
+  var useDfa = not fullContext
   var offset = p.i
-  var key = $decision & ":" & $precedence & ":"
-  for i, state in p.returnStates:
-    key.add $state & ":" & $p.precedences[i] & ","
+  var key = $decision & ":" & $precedence & ":" & $fullContext & ":"
+  if fullContext:
+    for i, state in p.returnStates:
+      key.add $state & ":" & $p.precedences[i] & ","
   key.add "|"
   while true:
     let kind = ord(p.tokens[offset].kind)
     key.add $kind & ","
-    if cache != nil and cache.entries.hasKey(key): return cache.entries[key]
+    if fullContext and cache != nil and cache.entries.hasKey(key):
+      return cache.entries[key]
     configs = atnClosure(configs, states, rules, stopRules, gss)
+    var dfaId = -1
+    if useDfa and gss.nodes.len == 0:
+      dfaId = sllCache.dfaState(decision, precedence, configs)
+      if sllCache.dfaStates[dfaId].resolved:
+        return sllCache.dfaStates[dfaId].result
+      if kind in sllCache.dfaStates[dfaId].transitions:
+        let target = sllCache.dfaStates[dfaId].transitions[kind]
+        configs = sllCache.dfaStates[target].configs
+        inc offset
+        continue
+    else:
+      # These DFA snapshots only cache configurations without local rule-call
+      # stacks. Keep simulating call-containing configurations directly.
+      useDfa = false
+    if not fullContext:
+      var completed = initHashSet[int]()
+      var continuing = initHashSet[int]()
+      for c in configs:
+        if c.state < 0: completed.incl c.alternative
+        else: continuing.incl c.alternative
+      for alternative in completed.items:
+        for other in continuing.items:
+          if alternative != other:
+            if useDfa:
+              sllCache.dfaStates[dfaId].result = -2
+              sllCache.dfaStates[dfaId].resolved = true
+            return -2
     if kind == 0:
       var accepted = high(int)
       var hasAccepted = false
@@ -358,8 +418,25 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
           accepted = min(accepted, c.alternative)
           hasAccepted = true
       if hasAccepted:
-        if cache != nil: cache.entries[key] = accepted
+        if not fullContext and accepted != high(int):
+          var acceptedAlts = initHashSet[int]()
+          for c in configs:
+            if c.state < 0: acceptedAlts.incl c.alternative
+          if acceptedAlts.len > 1:
+            if useDfa:
+              sllCache.dfaStates[dfaId].result = -2
+              sllCache.dfaStates[dfaId].resolved = true
+            return -2
+        if fullContext and cache != nil: cache.entries[key] = accepted
+        if useDfa:
+          sllCache.dfaStates[dfaId].result = accepted
+          sllCache.dfaStates[dfaId].resolved = true
         return accepted
+      if not fullContext:
+        if useDfa:
+          sllCache.dfaStates[dfaId].result = -2
+          sllCache.dfaStates[dfaId].resolved = true
+        return -2
     let expected = expectedAtn(configs, states)
     var next: seq[AtnConfig]
     for c in configs:
@@ -375,7 +452,16 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
       # that call site instead of turning prediction failure into a nested
       # rule error.
       for alternative in d.alternativeIds:
-        if alternative == high(int): return alternative
+        if alternative == high(int):
+          if useDfa:
+            sllCache.dfaStates[dfaId].result = alternative
+            sllCache.dfaStates[dfaId].resolved = true
+          return alternative
+      if not fullContext:
+        if useDfa:
+          sllCache.dfaStates[dfaId].result = -2
+          sllCache.dfaStates[dfaId].resolved = true
+        return -2
       if expected.len == 0: p.failPrediction(offset, [0])
       p.failPrediction(offset, expected)
     configs = atnClosure(next, states, rules, stopRules, gss)
@@ -383,8 +469,19 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
     for c in configs: survivors.incl c.alternative
     if survivors.len == 1 and kind != 0:
       for alternative in survivors.items:
-        if cache != nil: cache.entries[key] = alternative
+        if fullContext and cache != nil: cache.entries[key] = alternative
+        if useDfa:
+          sllCache.dfaStates[dfaId].result = alternative
+          sllCache.dfaStates[dfaId].resolved = true
         return alternative
+    if not fullContext:
+      if useDfa and gss.nodes.len == 0:
+        let target = sllCache.dfaState(decision, precedence, configs)
+        sllCache.dfaStates[dfaId].transitions[kind] = target
+      else:
+        useDfa = false
+      inc offset
+      continue
     if kind == 0:
       var accepted = high(int)
       var hasAccepted = false
@@ -397,6 +494,17 @@ proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
         return accepted
       p.failPrediction(offset, expectedAtn(configs, states))
     inc offset
+
+proc predict*[K, L, T](p: var ParserState[K, L, T], decision: int,
+    states: openArray[AtnStateData], decisions: openArray[AtnDecisionData],
+    rules: openArray[AtnRuleData], cache: PredictionCache = nil,
+    precedence = 0): int =
+  ## SLL first; retry with the active parser call stack when local context
+  ## leaves multiple alternatives or cannot find a viable alternative.
+  result = p.predictOne(decision, states, decisions, rules, cache, precedence)
+  if result == -2:
+    result = p.predictOne(decision, states, decisions, rules, cache,
+      precedence, fullContext = true)
 
 proc failPrediction*[K, L, T](p: var ParserState[K, L, T], at: int,
     expected: openArray[int]) {.noreturn.} =
