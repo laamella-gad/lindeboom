@@ -253,6 +253,27 @@ block parsegen_adaptive_alternatives:
     └── ';'
     """)
 
+block parsegen_dangling_else_uses_nearest_if:
+  let rules = "s : stat EOF ;\n" &
+    "stat : 'if' ID 'then' stat ('else' stat)? # ifStat\n" &
+    "     | ID # atom ;"
+  expectTree(rules, "if x then if y then a else b", """
+    s
+    └── ifStat
+        ├── 'if'
+        ├── ID "x"
+        ├── 'then'
+        └── ifStat
+            ├── 'if'
+            ├── ID "y"
+            ├── 'then'
+            ├── atom
+            │   └── ID "a"
+            ├── 'else'
+            └── atom
+                └── ID "b"
+    """)
+
 block parsegen_backtracking_loops:
   let rules = "s : ID (',' ID)* ','? ;"
   expectTree(rules, "a, b,", """

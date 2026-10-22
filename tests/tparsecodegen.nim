@@ -77,6 +77,25 @@ block parsecodegen_prediction_uses_full_context:
     let expected = interpreted(a, t, input)
     doAssert got[i] == expected, input & ":\n" & got[i] & "\nexpected:\n" & expected
 
+block parsecodegen_dangling_else_uses_nearest_if:
+  let dir = tmp / "dangling_else"
+  let grammarFile = dir / "dangling.ldb"
+  createDir(dir)
+  writeFile(grammarFile, "grammar Dangling;\n" &
+    "s : stat EOF ;\n" &
+    "stat : 'if' ID 'then' stat ('else' stat)? # ifStat\n" &
+    "     | ID # atom ;\n" &
+    "ID : [a-z]+ ; WS : [ ]+ -> skip ;\n")
+  let c = Case(grammarFile: grammarFile, inputs: @[
+    "if x then if y then a else b", "if x then if y then a else b else c"])
+  let a = generate(c, dir, standalone = false)
+  let got = runDriver(compile(dir, standalone = false), dir, c.inputs)
+  var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
+  let t = buildLexer(g, a.v, d)
+  for i, input in c.inputs:
+    let expected = interpreted(a, t, input)
+    doAssert got[i] == expected, input & ":\n" & got[i] & "\nexpected:\n" & expected
+
 block parsecodegen_paper_stat_grammar:
   let dir = tmp / "paper_stat"
   let grammarFile = dir / "stat.ldb"
