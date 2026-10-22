@@ -1,7 +1,7 @@
 ---
 id: 17
 title: ALL(*) prediction for non-LL(1) decisions
-status: in-progress
+status: done
 labels: [parser]
 depends: [6]
 ---
@@ -89,7 +89,7 @@ the interpreter and generated parsers.
       `tests/grammars/ambiguous.ldb`, MiniPy; a nested ambiguous grammar
       that is exponential with backtracking runs in linear time; `tfuzz`
       keeps interpreter and generated parsers in agreement
-- [ ] Tests ported from ANTLR 4's runtime test suite descriptors (see
+- [x] Tests ported from ANTLR 4's runtime test suite descriptors (see
       Testing above), run against both the interpreter and generated parsers
 - [x] `README.md` updated (prediction, the parser bullet under Design, the
       "not LL(1)" warning)
