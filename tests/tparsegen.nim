@@ -274,6 +274,17 @@ block parsegen_dangling_else_uses_nearest_if:
                 └── ID "b"
     """)
 
+block parsegen_nested_shared_prefix_stress:
+  # A recursive choice keeps the same `x` prefix at every level, with each
+  # level deciding whether it owns a trailing `y`. This was exponential when
+  # alternatives were reparsed speculatively.
+  let rules = "s : a EOF ;\na : 'x' a 'y' | 'x' a | 'x' ;"
+  var input = ""
+  for _ in 0 ..< 18: input.add "x "
+  for _ in 0 ..< 17: input.add "y "
+  let got = tree(g(rules), input)
+  doAssert got.startsWith("s\n└── a\n"), got
+
 block parsegen_backtracking_loops:
   let rules = "s : ID (',' ID)* ','? ;"
   expectTree(rules, "a, b,", """

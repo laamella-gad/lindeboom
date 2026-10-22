@@ -96,6 +96,25 @@ block parsecodegen_dangling_else_uses_nearest_if:
     let expected = interpreted(a, t, input)
     doAssert got[i] == expected, input & ":\n" & got[i] & "\nexpected:\n" & expected
 
+block parsecodegen_nested_shared_prefix_stress:
+  let dir = tmp / "nested_prediction_stress"
+  let grammarFile = dir / "nested.ldb"
+  createDir(dir)
+  writeFile(grammarFile, "grammar NestedPrediction;\n" &
+    "s : a EOF ;\n" &
+    "a : 'x' a 'y' | 'x' a | 'x' ;\n" &
+    "WS : [ ]+ -> skip ;\n")
+  var input = ""
+  for _ in 0 ..< 18: input.add "x "
+  for _ in 0 ..< 17: input.add "y "
+  let c = Case(grammarFile: grammarFile, inputs: @[input])
+  let a = generate(c, dir, standalone = false)
+  let got = runDriver(compile(dir, standalone = false), dir, c.inputs)
+  var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
+  let t = buildLexer(g, a.v, d)
+  let expected = interpreted(a, t, input)
+  doAssert got[0] == expected, got[0] & "\nexpected:\n" & expected
+
 block parsecodegen_paper_stat_grammar:
   let dir = tmp / "paper_stat"
   let grammarFile = dir / "stat.ldb"
