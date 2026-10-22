@@ -55,6 +55,28 @@ block parsecodegen_prediction_uses_active_call_context:
     let expected = interpreted(a, t, input)
     doAssert got[i] == expected, got[i] & "\nexpected:\n" & expected
 
+block parsecodegen_prediction_uses_full_context:
+  let dir = tmp / "full_context"
+  let grammarFile = dir / "context.ldb"
+  createDir(dir)
+  # The input after `a` distinguishes the alternatives through the caller's
+  # continuation: A can be empty or consume `b`.
+  writeFile(grammarFile, "grammar FullContext;\n" &
+    "s : 'x' b | 'y' c ;\n" &
+    "b : a 'a' ;\n" &
+    "c : a 'b' 'a' ;\n" &
+    "a : 'b' | ;\n" &
+    "WS : [ ]+ -> skip ;\n")
+  let c = Case(grammarFile: grammarFile, inputs: @[
+    "x a", "x b a", "y b a", "y b b a"])
+  let a = generate(c, dir, standalone = false)
+  let got = runDriver(compile(dir, standalone = false), dir, c.inputs)
+  var (g, d) = loadGrammar(readFile(grammarFile), grammarFile)
+  let t = buildLexer(g, a.v, d)
+  for i, input in c.inputs:
+    let expected = interpreted(a, t, input)
+    doAssert got[i] == expected, input & ":\n" & got[i] & "\nexpected:\n" & expected
+
 block parsecodegen_paper_stat_grammar:
   let dir = tmp / "paper_stat"
   let grammarFile = dir / "stat.ldb"
