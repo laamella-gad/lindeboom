@@ -1,4 +1,4 @@
-// Non-LL(1) decisions resolved by backtracking; used by tparsecodegen.
+// Non-LL(1) decisions resolved by ALL(*) prediction; used by tparsecodegen.
 grammar Ambiguous;
 
 start : item* EOF ;

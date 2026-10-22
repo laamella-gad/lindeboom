@@ -274,6 +274,40 @@ block parsegen_dangling_else_uses_nearest_if:
                 └── ID "b"
     """)
 
+block parsegen_stack_sensitive_prediction:
+  # Paper, section 2: A's choice depends on the rule that called it.
+  let rules = "s : 'x' b | 'y' c ;\nb : a 'a' ;\nc : a 'b' 'a' ;\n" &
+    "a : 'b' | ;"
+  for input in ["x b a", "x a", "y b b a", "y b a"]:
+    let got = tree(g(rules), input)
+    doAssert "syntax" notin got and "error" notin got, input & "\n" & got
+
+block parsegen_ambiguity_takes_lowest_alternative:
+  expectTree("s : ID # first | ID # second ;", "a", """
+    first
+    └── ID "a"
+    """)
+
+block parsegen_full_context_decides_after_sll_conflict:
+  # ANTLR FullContextParsing: the choice in `e` is only settled by the
+  # token after the call, which differs per caller.
+  let rules = "s : 'if' e 'then' | 'for' e 'do' ;\ne : ID | ID INT ;"
+  expectTree(rules, "if a 1 then", """
+    s
+    ├── 'if'
+    ├── e
+    │   ├── ID "a"
+    │   └── INT "1"
+    └── 'then'
+    """)
+  expectTree(rules, "for a do", """
+    s
+    ├── 'for'
+    ├── e
+    │   └── ID "a"
+    └── 'do'
+    """)
+
 block parsegen_nested_shared_prefix_stress:
   # A recursive choice keeps the same `x` prefix at every level, with each
   # level deciding whether it owns a trailing `y`. This was exponential when
@@ -285,7 +319,27 @@ block parsegen_nested_shared_prefix_stress:
   let got = tree(g(rules), input)
   doAssert got.startsWith("s\n└── a\n"), got
 
-block parsegen_backtracking_loops:
+block parsegen_ambiguous_loop_work_is_bounded:
+  var previous = 0
+  for size in [16, 32, 64]:
+    var (a, t, _) = analyzed(g("s : ('x' | 'x' 'x')* 'z' EOF ;"))
+    a.predictionCache = newPredictionCache(trackWork = true)
+    var input = ""
+    for _ in 0 ..< size: input.add "x "
+    input.add "z"
+    var diagnostics = Diagnostics(filename: "input")
+    let n = a.interpret(tokenize[int](t, input, diagnostics), input,
+      a.parserRules[0], diagnostics)
+    doAssert n != nil and not diagnostics.hasErrors, $diagnostics.items
+    let work = a.predictionCache.predictionWork
+    if previous > 0:
+      # This grammar needs the loop decision to inspect the remaining run of
+      # shared-prefix tokens. Keep a generous quadratic bound to catch an
+      # exponential regression without making a wall-clock assertion.
+      doAssert work <= previous * 5, $previous & " -> " & $work
+    previous = work
+
+block parsegen_prediction_loops:
   let rules = "s : ID (',' ID)* ','? ;"
   expectTree(rules, "a, b,", """
     s
@@ -306,7 +360,7 @@ block parsegen_backtracking_loops:
     └── ID "b"
     """)
 
-block parsegen_backtracking_operators:
+block parsegen_prediction_operators:
   let rules = "e : e '[' e ']' # index | e '[' e ':' e ']' # slice | ID # name ;"
   expectTree(rules, "a[b:c]", """
     slice

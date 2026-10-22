@@ -1,7 +1,7 @@
 ---
 id: 17
 title: ALL(*) prediction for non-LL(1) decisions
-status: open
+status: in-progress
 labels: [parser]
 depends: [6]
 ---
@@ -74,22 +74,22 @@ the interpreter and generated parsers.
 
 ## Tasks
 
-- [ ] ATN construction from the analysed grammar
-- [ ] `adaptivePredict` in the runtime: SLL with DFA cache, LL fallback,
+- [x] ATN construction from the analysed grammar
+- [x] `adaptivePredict` in the runtime: SLL with DFA cache, LL fallback,
       conflict and ambiguity detection, precedence predicates
-- [ ] Interpreter and code generator use it for non-LL(1) decisions;
+- [x] Interpreter and code generator use it for non-LL(1) decisions;
       regenerate the examples and the ldb front end
-- [ ] Remove the backtracking code and the "is not LL(1)" warnings, and the
+- [x] Remove the backtracking code and the "is not LL(1)" warnings, and the
       tests that expect them (`tparsegen`, `tcli`)
-- [ ] Syntax errors from prediction (no viable alternative) report the
+- [x] Syntax errors from prediction (no viable alternative) report the
       farthest token reached with the tokens expected there, and recovery
       (issue 7) keeps working
-- [ ] Tests: the paper's `stat` grammar (figure 1), its stack-sensitive
+- [x] Tests: the paper's `stat` grammar (figure 1), its stack-sensitive
       `S → xB | yC, B → Aa, C → Aba, A → b | ε`, the `x y z` case above,
       `tests/grammars/ambiguous.ldb`, MiniPy; a nested ambiguous grammar
       that is exponential with backtracking runs in linear time; `tfuzz`
       keeps interpreter and generated parsers in agreement
 - [ ] Tests ported from ANTLR 4's runtime test suite descriptors (see
       Testing above), run against both the interpreter and generated parsers
-- [ ] `README.md` updated (prediction, the parser bullet under Design, the
+- [x] `README.md` updated (prediction, the parser bullet under Design, the
       "not LL(1)" warning)

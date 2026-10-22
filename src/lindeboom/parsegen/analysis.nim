@@ -249,7 +249,7 @@ func ruleFollow*(a: Analysis, r: int): TokenSet =
 
 func isAmbiguous*(a: Analysis, e: GExpr): bool =
   ## Whether the next token can both start and follow the `?`, `*` or `+`
-  ## element `e`, which is then tried speculatively.
+  ## element `e`, which prediction then has to settle.
   (a.first[e.inner] * a.follow[e]).len > 0
 
 func sortedKinds*(s: TokenSet): seq[int] =
