@@ -6,20 +6,23 @@ labels: [parser, grammar]
 depends: [17]
 ---
 
-Support ANTLR 4 semantic predicates (`{ ... }?`) so a grammar can reject an
-alternative based on parser state or the tokens seen so far. Today target code
-in a grammar is rejected, and there is no way to express context-sensitive
-choices that the ALL(*) lookahead alone cannot settle.
+Support semantic predicates so a grammar can reject an alternative based on
+the tokens seen so far. Today target code in a grammar is rejected, and there
+is no way to express context-sensitive choices that the ALL(*) lookahead
+alone cannot settle. ANTLR 4's `{ ... }?` is the reference for the use cases,
+but arbitrary target code is not the surface (see Design).
 
 The main design question is how predicates work in both generated parsers and
 the interpreter without allowing arbitrary actions.
 
-- [ ] Decide the supported predicate expression and its access to parser state,
-      current token, and labels already matched.
+- [ ] Decide the supported predicate expression: a fixed, side-effect-free
+      language over the current token, `next`/`prev`, and labels already
+      matched (see Design).
 - [ ] Parse predicates in parser rules, and decide whether lexer predicates are
       in scope. Keep actions out of scope.
 - [ ] Represent predicates in the AST with their source position and text.
-- [ ] Check placement and types, and reject statements or unsupported Nim.
+- [ ] Check placement and types, and reject anything outside the expression
+      language.
 - [ ] Evaluate predicates during prediction: prune failing alternatives before
       committing, without side effects, and reuse cached results where safe.
 - [ ] Emit predicates in generated parsers at the point where their alternative
@@ -32,6 +35,56 @@ the interpreter without allowing arbitrary actions.
       parity.
 - [ ] Document the syntax and limitations, and remove semantic predicates from
       the unsupported list.
+
+## Design
+
+The goal is a predicate that is data, not code: no Nim, no method calls, no
+host callbacks, and nothing the interpreter cannot evaluate. That keeps
+generated parsers and `lindeboom parse` on one path and makes predicates
+side-effect free and cacheable.
+
+A predicate is a boolean expression over facts the parser already has:
+
+- the current token: type, text, or `EOF`;
+- `next` and `look(k)`: type or text of the token `k` ahead;
+- `prev`: the previous token, for lexer-ish decisions in parser rules;
+- labels already matched in the rule, by type or text.
+
+Sketch:
+
+```antlr
+prefixexp : [next != OP] NAME ( '[' exp ']' | '.' NAME )* | ... ;
+literal   : signed_number [next != '+' and next != '-'] | ... ;
+```
+
+No assignment, no calls, no arbitrary member access. If a check cannot be
+written in this language it is a grammar error, not an escape hatch.
+
+What this covers:
+
+- Lua's `IsFunctionCall()` is `LT(2) != OP`; a `next` guard is enough.
+- Python 3's `CannotBePlusMinus` / `CannotBeDotLpEq` are stubs in the
+  reference grammar and are really next-token checks.
+- C's `IsSomethingOfTypeName` / `IsCast` need a typedef symbol table. Keep
+  symbol-table predicates out of scope rather than import actions; such
+  grammars need rewriting (parse the ambiguity, resolve it outside the
+  parser) or stay unsupported.
+
+Fallbacks that are not predicates:
+
+- #6 ordered speculation already resolves some same-prefix choices.
+- Lexer-y decisions (regex vs division, heredoc versus `<<`) belong in #21
+  state, not here.
+- Resolving an ambiguous parse in a host-side post-pass is possible, but it
+  is a separate API and a tree-shape problem; not part of this issue.
+
+Rejected: named predicates bound by the host program. They keep the grammar
+code-free, but `lindeboom parse` can no longer run the grammar standalone and
+"generated and interpreted agree" is only testable when the hooks exist.
+
+Lexer predicates are out of scope for now: the state they test (`isLDelim`,
+`opened`) is either configuration or lexer state, which #21 handles. Adding
+the same expression language to the lexer runtime is a separate decision.
 
 ## Sample grammars
 
