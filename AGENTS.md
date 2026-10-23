@@ -28,7 +28,7 @@ Lindeboom is a Nim parser generator. It reads an ANTLR-4-style `.ldb` grammar an
 - `tgolden` checks that generated output matches `examples/{calc,calc_var,json}` and the self-hosted front end, and it builds and runs the example programs.
 - After a deliberate codegen change, run `nimble build`, then `nimble test` (or `nim c -r tests/tgolden.nim`).
 - The self-hosted front end bootstraps automatically during `nimble build` and `nimble test`; `tgolden` checks that it is a fixpoint.
-- `examples/flo` and `examples/minipy` generated modules are also covered by the build/test regeneration, though `tgolden` does not compare them directly.
+- `examples/minipy` generated modules are also covered by the build/test regeneration, though `tgolden` does not compare them directly.
 
 ## Issues
 

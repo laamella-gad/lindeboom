@@ -1,3 +1,0 @@
-deflower 1nvader.prg
-$c000-$c010 virtual byte[40*2+1] bytes1 export a.bin
-$2c75 code print (ascii[until $ff] text, byte)

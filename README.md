@@ -342,7 +342,9 @@ The parser uses one token when that settles a choice. Otherwise it predicts
 with an ATN built from the grammar, following alternatives in parallel through
 the remaining input and the active rule-call context. It then parses the
 selected alternative once. Repeated predictions reuse cached lookahead
-results. Ambiguous input is resolved in favor of the earliest alternative.
+results. This is the ALL(*) algorithm from Parr, Harwell, and Fisher,
+"Adaptive LL(*) Parsing: The Power of Dynamic Analysis" (OOPSLA 2014), that also powers ANTLR 4.
+Ambiguous input is resolved in favor of the earliest alternative.
 Expression rules continue to use precedence climbing.
 
 ## The generated code
@@ -462,8 +464,7 @@ In `examples/`:
 - `calc_var`: an integer calculator with variables and an interactive
   shell, with an expression rule;
 - `json`: a JSON pretty-printer;
-- `minipy`: the grammar of a small Python-like language, with indentation;
-- `flo`: the grammar of Deflower's `.flo` annotation files.
+- `minipy`: the grammar of a small Python-like language, with indentation.
 
 Lindeboom's own grammar front end is generated from
 `src/lindeboom/grammar/ldb.ldb`. Planned work is in [`issues/`](issues/README.md).
