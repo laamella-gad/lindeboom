@@ -1,8 +1,9 @@
-## The generated modules checked in under `examples/` and the front end's own
-## `ldb_lexer.nim` and `ldb_parser.nim` are golden files: they must equal what
-## the generator produces now. After a deliberate change to the generated
-## code, regenerate them with `lindeboom gen <grammar>`. For the front end,
-## generate twice: the second run uses the front end the first one made.
+## The generated modules in `examples/` and the front end's own
+## `ldb_lexer.nim` and `ldb_parser.nim` must equal what the generator produces
+## now. `nimble build` and `nimble test` regenerate them; the example modules
+## are not checked in, and the front end is the bootstrap exception. For the
+## front end the generator bootstraps from the checked-in parser first, so the
+## result is a fixpoint.
 ##
 ## Also runs the example programs built on them.
 

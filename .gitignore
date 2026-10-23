@@ -19,6 +19,13 @@ nimble.paths
 testresults/
 outputGotten.txt
 
+# Generated lexers and parsers. The self-hosted front end is the bootstrap
+# exception: it is checked in so a clean checkout can build the generator.
+*_lexer.nim
+*_parser.nim
+!src/lindeboom/grammar/ldb_lexer.nim
+!src/lindeboom/grammar/ldb_parser.nim
+
 # OS / editor
 .DS_Store
 *.swp

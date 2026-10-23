@@ -1,6 +1,6 @@
 // The grammar of `.ldb` grammar files. `ldb_lexer.nim` and `ldb_parser.nim`
-// are generated from it; regenerate them with
-// `lindeboom gen src/lindeboom/grammar/ldb.ldb`.
+// are generated from it; `nimble build` regenerates them. They are checked in
+// as the bootstrap that lets a clean checkout build the generator.
 //
 // Settings, lexer commands and `<assoc>` are parsed as plain identifiers and
 // checked when the tree is turned into a `Grammar`.

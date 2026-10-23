@@ -128,9 +128,14 @@ expression:1:5: error: expected '-', '(' or NUMBER but found '*'
 Lindeboom needs Nim 2.2.10 or later and nothing else.
 
 ```sh
-nimble build        # builds bin/lindeboom
+nimble build        # builds bin/lindeboom, regenerating the parsers from the grammars
 nimble test         # runs the test suite
 ```
+
+Generated lexers and parsers are not checked in. `nimble build` and
+`nimble test` write them from the grammars; the only exception is the
+self-hosted `.ldb` front end, which is checked in so a clean checkout can
+bootstrap the generator.
 
 The generated modules import the runtime as `lindeboom/runtime/...`, so
 compile them with Lindeboom's `src` directory on the path
