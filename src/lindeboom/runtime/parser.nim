@@ -273,13 +273,6 @@ func `==`(a, b: GssKey): bool =
   a.returnState == b.returnState and a.parent == b.parent and
     a.precedence == b.precedence
 
-func hash(c: AtnConfig): Hash =
-  result = hash(c.state)
-  result = result !& hash(c.alternative)
-  result = result !& hash(c.stack)
-  result = result !& hash(c.precedence)
-  result = !$result
-
 func hash(k: GssKey): Hash =
   result = hash(k.returnState)
   result = result !& hash(k.parent)
