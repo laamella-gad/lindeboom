@@ -20,6 +20,7 @@ as plain Nim modules. The parser builds a parse tree that you walk with
 
 ## Contents
 
+- [Why](#why)
 - [Quick start](#quick-start)
 - [Building](#building)
 - [The command-line tool](#the-command-line-tool)
@@ -34,6 +35,14 @@ as plain Nim modules. The parser builds a parse tree that you walk with
 - [Errors](#errors)
 - [Examples](#examples)
 - [Design](#design)
+
+## Why
+
+The Java world has the most advanced parser generator, ANTLR 4. Nim has no
+such thing. So I let Claude and others generate Lindeboom, which has all the
+features I like from ANTLR 4: you specify the grammar apart from the code,
+and left recursion stops being a problem, because expression rules keep their
+natural shape and precedence climbing handles them.
 
 ## Quick start
 
