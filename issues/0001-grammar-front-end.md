@@ -2,8 +2,7 @@
 id: 1
 title: Grammar front end and checks
 status: done
-labels: [milestone, grammar]
-milestone: 1
+labels: [grammar]
 ---
 
 Hand-written lexer and recursive-descent parser for `.ldb` files, producing a

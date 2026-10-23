@@ -2,8 +2,7 @@
 id: 2
 title: Lexer generator
 status: done
-labels: [milestone, lexer]
-milestone: 2
+labels: [lexer]
 ---
 
 Compile lexer rules to a minimized DFA over UTF-8 bytes.

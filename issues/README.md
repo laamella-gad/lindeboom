@@ -10,8 +10,7 @@ Each file starts with front matter:
 id: 1
 title: Grammar front end and checks
 status: open        # open | in-progress | done | wontfix
-labels: [milestone]
-milestone: 1       # optional
+labels: [grammar]
 depends: [2, 3]    # optional: issue ids that must be done first
 ---
 ```

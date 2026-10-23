@@ -2,8 +2,7 @@
 id: 6
 title: Conflict fallback
 status: done
-labels: [milestone, parser]
-milestone: 6
+labels: [parser]
 ---
 
 Where a decision is not LL(1), try the conflicting alternatives in order and

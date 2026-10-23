@@ -2,8 +2,7 @@
 id: 5
 title: Left recursion and precedence
 status: done
-labels: [milestone, parser]
-milestone: 5
+labels: [parser]
 ---
 
 Rewrite direct left recursion to precedence climbing.

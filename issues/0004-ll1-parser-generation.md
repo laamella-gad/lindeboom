@@ -2,8 +2,7 @@
 id: 4
 title: LL(1) parser generation and parse trees
 status: done
-labels: [milestone, parser]
-milestone: 4
+labels: [parser]
 ---
 
 One proc per rule, choosing alternatives by one-token lookahead, building a

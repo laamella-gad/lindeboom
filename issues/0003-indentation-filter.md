@@ -2,8 +2,7 @@
 id: 3
 title: Indentation filter
 status: done
-labels: [milestone, indentation]
-milestone: 3
+labels: [indentation]
 ---
 
 Token filter between lexer and parser that emits NEWLINE / INDENT / DEDENT.
