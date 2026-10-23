@@ -44,6 +44,9 @@ block golden_json:
 block golden_calc_var:
   checkGolden(root / "examples" / "calc_var" / "calc_var.ldb")
 
+block golden_miniml:
+  checkGolden(root / "examples" / "miniml" / "miniml.ldb")
+
 block golden_front_end:
   # the front end parses its own grammar and generates itself
   checkGolden(root / "src" / "lindeboom" / "grammar" / "ldb.ldb")
@@ -98,6 +101,48 @@ Error: numeral 99999999999999999999 is too large
 Error: column 4: expected '-', '(', NUMERAL or VARIABLE but found end of input
 Error: column 3: unexpected character '$'
 Error: column 5: expected end of input but found NUMERAL '2'
+""", output
+
+block example_miniml:
+  let exe = build(root / "examples" / "miniml" / "miniml.nim")
+  let example = root / "examples" / "miniml" / "example.miniml"
+  let (fileOutput, fileCode) = execCmdEx(quoteShell(exe) & " " & quoteShell(example))
+  doAssert fileCode == 0, fileOutput
+  doAssert fileOutput == """
+- : int = 13
+x : int = 14
+fact : int -> int = <fun>
+- : int = 3628800
+""", fileOutput
+
+  # the REPL, with a multiline definition, type errors, and a syntax error
+  let session = """
+1 + 2 * 3 ;;
+let x = 14 ;;
+let fact =
+  fun f (n : int) : int is
+    if n = 0 then 1 else n * f (n-1) ;;
+fact 5 ;;
+x + 1 ;;
+1 + true ;;
+unknown ;;
+1 + ;;
+let apply = fun apply (f : int -> int) : int is f 3 ;;
+apply (fun inc (n : int) : int is n + 1) ;;
+"""
+  let (output, code) = execCmdEx(quoteShell(exe), input = session)
+  doAssert code == 0, output
+  doAssert output == """
+- : int = 7
+x : int = 14
+fact : int -> int = <fun>
+- : int = 120
+- : int = 15
+Error: line 1, column 5: this expression has type bool but is used as if it has type int
+Error: line 1, column 1: unknown variable 'unknown'
+stdin:1:5: error: expected '-', 'if', 'fun', '(', 'true', 'false', VAR or INT but found ';;'
+apply : (int -> int) -> int = <fun>
+- : int = 4
 """, output
 
 block example_json:

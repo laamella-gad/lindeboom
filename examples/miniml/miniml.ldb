@@ -1,0 +1,48 @@
+// A port of plzoo's MiniML: an eager, statically typed functional language.
+// See https://github.com/andrejbauer/plzoo/tree/master/src/miniml.
+//
+// Commands are separated by ';;'; the last one is optional at end of input.
+// `if ... then ... else ...` and `fun ... is ...` extend as far to the right
+// as possible, application binds tighter than any operator, and `- INT` is a
+// negative literal (there is no unary minus).
+grammar MiniML;
+
+file : (commands=command ';;')* commands=command? EOF ;
+
+command : 'let' name=VAR '=' value=expr                 # definition
+        | value=expr                                    # evaluation
+        ;
+
+// Earlier alternatives bind tighter. Application is the tightest, then
+// multiplication, addition and subtraction, and comparison. Equality and
+// less-than share a level; both associate to the left here (the original
+// grammar makes them non-associative, which a chain cannot satisfy because
+// comparing booleans is a type error anyway).
+expr : left=expr argument=simpleExpr                     # apply
+     | left=expr op='*' right=expr                       # times
+     | left=expr op=('+' | '-') right=expr               # plus
+     | left=expr op=('=' | '<') right=expr               # compare
+     | '-' value=INT                                     # negative
+     | 'if' cond=expr 'then' yes=expr 'else' no=expr     # if
+     | 'fun' name=VAR '(' arg=VAR ':' argType=ty ')'
+       ':' resultType=ty 'is' body=expr                  # fun
+     | value=simpleExpr                                  # simple
+     ;
+
+simpleExpr : 'true'                                      # true
+           | 'false'                                     # false
+           | value=INT                                   # int
+           | name=VAR                                    # var
+           | '(' value=expr ')'                          # paren
+           ;
+
+// Function types are right-associative; parentheses override that.
+ty : <assoc=right> left=ty '->' right=ty                 # typeArrow
+   | 'int'                                               # typeInt
+   | 'bool'                                              # typeBool
+   | '(' value=ty ')'                                    # typeParen
+   ;
+
+VAR : [a-zA-Z]+ ;
+INT : [0-9]+ ;
+WS  : [ \t\r\n]+ -> skip ;

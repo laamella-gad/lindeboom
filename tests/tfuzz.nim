@@ -26,6 +26,10 @@ let seeds = [
     "x = f(1); g(x, -a ** 2 + b[1] * c(d, e))\nreturn x\npass; pass\n",
     "def f(n):\n    if n < 2:\n        return 1\n    else:\n        while n: n = n - 1\n" &
       "    return f(\n  n)\n"]),
+  Case(grammarFile: root / "examples" / "miniml" / "miniml.ldb", inputs: @[
+    "3 + (if 5 < 6 then 10 else 100) ;; let x = 14 ;;",
+    "let fact = fun f (n : int) : int is if n = 0 then 1 else n * f (n-1) ;;" &
+      "fact 10 ;;"]),
   Case(grammarFile: root / "src" / "lindeboom" / "grammar" / "ldb.ldb", inputs: @[
     readFile(root / "tests" / "grammars" / "features.ldb"),
     readFile(root / "examples" / "minipy" / "minipy.ldb")])]

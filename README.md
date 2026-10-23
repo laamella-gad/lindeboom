@@ -473,6 +473,8 @@ In `examples/`:
 - `calc_var`: an integer calculator with variables and an interactive
   shell, with an expression rule;
 - `json`: a JSON pretty-printer;
+- `miniml`: an eager, statically typed functional language with a type
+  checker, interpreter, and REPL, after plzoo's MiniML;
 - `minipy`: the grammar of a small Python-like language, with indentation.
 
 Lindeboom's own grammar front end is generated from
