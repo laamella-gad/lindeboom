@@ -10,6 +10,3 @@ binDir = "bin"
 requires "nim >= 2.2.10"
 
 bin = @["lindeboom"]
-
-task test, "Run the test suite":
-  exec "nim c -r tests/tester.nim"
