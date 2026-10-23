@@ -1,0 +1,26 @@
+chunk
+└── block
+    ├── assign
+    │   ├── varlist
+    │   │   └── varName
+    │   │       └── NAME "x"
+    │   ├── '='
+    │   └── explist
+    │       └── number
+    │           └── NUMERAL "1"
+    ├── assign
+    │   ├── varlist
+    │   │   └── varName
+    │   │       └── NAME "y"
+    │   ├── '='
+    │   └── explist
+    │       └── number
+    │           └── NUMERAL "2"
+    └── assign
+        ├── varlist
+        │   └── varName
+        │       └── NAME "w"
+        ├── '='
+        └── explist
+            └── number
+                └── NUMERAL "4"

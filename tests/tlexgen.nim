@@ -158,3 +158,13 @@ block lex_errors:
   # lexing goes on after an error; a run of bad characters is one error
   doAssert lex(g, "a $%& b $ c") == @["ID a", "ID b", "ID c",
     "1:3: unexpected character '$'", "1:9: unexpected character '$'"]
+
+block lex_raw_bytes_in_ascii_negated_set:
+  # A negated set that excludes only ASCII also accepts a raw non-ASCII
+  # byte, so byte-oriented grammars can lex non-UTF-8 input.
+  const raw = "grammar G; a : (STR | ID)* ; ID : [a-z]+ ; " &
+    "STR : '\"' ~[\"]* '\"' ; WS : ' ' -> skip ;"
+  doAssert lex(raw, "\"\xFF\xE7\" id") == @["STR \"\xFF\xE7\"", "ID id"]
+  # ... but a set that excludes a non-ASCII code point stays exact.
+  const exact = "grammar G; a : ID* ; ID : ~[é]+ ;"
+  doAssert lex(exact, "\xE9") == @["1:1: invalid UTF-8 byte 0xE9"]

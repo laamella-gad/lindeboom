@@ -1,0 +1,185 @@
+// Lua 5.4 grammar (issue 10)
+// Long brackets are expanded for up to six '=' signs: a DFA cannot count the
+// opening '=' run and require the same in the closing bracket, so the
+// grammar lists one rule per nesting level.
+//
+// `exp` lists the twelve precedence levels from Lua 5.4 §3.4.8, highest
+// first: `^`, unary, `* / // %`, `+ -`, `..`, shifts, `&`, `~`, `|`,
+// comparisons, `and`, `or`. `^` and `..` are right-associative.
+grammar Lua;
+
+chunk : block ;
+
+block : stat* retstat? ;
+
+stat : ';'                                           # empty
+     | label                                        # label
+     | 'break'                                     # break
+     | 'goto' NAME                                 # goto
+     | 'do' block 'end'                            # do
+     | 'while' exp 'do' block 'end'                # while
+     | 'repeat' block 'until' exp                  # repeat
+     | 'if' exp 'then' block
+       ('elseif' exp 'then' block)*
+       ('else' block)?
+       'end'                                       # if
+     | 'for' NAME '=' exp ',' exp (',' exp)? 'do' block 'end'        # forNum
+     | 'for' namelist 'in' explist 'do' block 'end'                  # forIn
+     | 'function' funcname funcbody                # function
+     | 'local' 'function' NAME funcbody            # localFunction
+     | 'local' attnamelist ('=' explist)?          # local
+     | varlist '=' explist                         # assign
+     | functioncall                               # call
+     ;
+
+label : '::' NAME '::' ;
+retstat : 'return' explist? ';'? ;
+
+funcname : NAME ('.' NAME)* (':' NAME)? ;
+
+varlist : var (',' var)* ;
+namelist : NAME (',' NAME)* ;
+explist : exp (',' exp)* ;
+
+attnamelist : NAME attrib (',' NAME attrib)* ;
+attrib : ('<' NAME '>')? ;
+
+var : prefixexp '[' exp ']'                      # varIndex
+    | prefixexp '.' NAME                         # varField
+    | NAME                                      # varName
+    ;
+
+exp : 'nil'                                      # nil
+    | 'false'                                    # false
+    | 'true'                                     # true
+    | NUMERAL                                    # number
+    | STRING                                     # string
+    | '...'                                      # vararg
+    | functiondef                                # func
+    | prefixexp                                  # prefix
+    | tableconstructor                           # table
+    | <assoc=right> left=exp '^' right=exp       # power
+    | op=('#' | '-' | 'not' | '~') right=exp     # unary
+    | left=exp op=('*' | '/' | '//' | '%') right=exp  # mul
+    | left=exp op=('+' | '-') right=exp          # add
+    | <assoc=right> left=exp op='..' right=exp   # concat
+    | left=exp op=('<<' | '>>') right=exp        # shift
+    | left=exp op='&' right=exp                  # band
+    | left=exp op='~' right=exp                  # bxor
+    | left=exp op='|' right=exp                  # bor
+    | left=exp op=('<' | '<=' | '>' | '>=' | '==' | '~=') right=exp  # compare
+    | left=exp op='and' right=exp                # and
+    | left=exp op='or' right=exp                 # or
+    ;
+
+// A prefixexp is a variable, a function call, or a parenthesised expression,
+// followed by any chain of indexing, field access, method calls and calls.
+// Written left-recursively; the generator turns it into a precedence loop.
+prefixexp : prefixexp '[' exp ']'                # pIndex
+          | prefixexp '.' NAME                   # pField
+          | prefixexp ':' NAME args              # pMethodCall
+          | prefixexp args                       # pCall
+          | '(' exp ')'                         # pParen
+          | NAME                                # pName
+          ;
+
+functioncall : prefixexp args                    # fcall
+             | prefixexp ':' NAME args           # fmethod
+             ;
+
+args : '(' explist? ')'                          # parenArgs
+     | tableconstructor                         # tableArgs
+     | STRING                                   # stringArgs
+     ;
+
+functiondef : 'function' funcbody ;
+funcbody : '(' parlist? ')' block 'end' ;
+parlist : namelist (',' '...')? | '...' ;
+
+tableconstructor : '{' fieldlist? '}' ;
+fieldlist : field (fieldsep field)* fieldsep? ;
+field : '[' exp ']' '=' exp                      # fieldIndex
+      | NAME '=' exp                            # fieldName
+      | exp                                     # fieldList
+      ;
+fieldsep : ',' | ';' ;
+
+// Names and numerals -------------------------------------------------------
+
+NAME : [a-zA-Z_] [a-zA-Z0-9_]* ;
+
+NUMERAL : HEX_FLOAT
+        | HEX_INT
+        | DEC_FLOAT
+        | DEC_INT
+        ;
+fragment DEC_INT   : [0-9]+ ;
+fragment DEC_FLOAT : [0-9]+ '.' [0-9]* ([eE] [+-]? [0-9]+)?
+                   | '.' [0-9]+ ([eE] [+-]? [0-9]+)?
+                   | [0-9]+ [eE] [+-]? [0-9]+
+                   ;
+fragment HEX_INT   : '0' [xX] [0-9a-fA-F]+ ;
+fragment HEX_FLOAT : '0' [xX] ([0-9a-fA-F]+ '.' [0-9a-fA-F]* | '.' [0-9a-fA-F]+) ([pP] [+-]? [0-9]+)?
+                   | '0' [xX] [0-9a-fA-F]+ [pP] [+-]? [0-9]+
+                   ;
+
+// Literal strings ----------------------------------------------------------
+// A short string may contain backslash-escaped characters, including a
+// backslash-newline continuation; escapes are kept verbatim, since the parser
+// only records the literal text.
+
+STRING : SHORT_DQ
+       | SHORT_SQ
+       | LONG0
+       | LONG1
+       | LONG2
+       | LONG3
+       | LONG4
+       | LONG5
+       | LONG6
+       ;
+
+fragment SHORT_DQ : '"' (~["\\] | '\\' .)* '"' ;
+fragment SHORT_SQ : SQ (~['\\] | '\\' .)* SQ ;
+fragment SQ       : '\'' ;
+
+fragment LONG0 : '[' '[' BODY ']' ']' ;
+fragment LONG1 : '[' '=' '[' BODY ']' '=' ']' ;
+fragment LONG2 : '[' '==' '[' BODY ']' '==' ']' ;
+fragment LONG3 : '[' '===' '[' BODY ']' '===' ']' ;
+fragment LONG4 : '[' '====' '[' BODY ']' '====' ']' ;
+fragment LONG5 : '[' '=====' '[' BODY ']' '=====' ']' ;
+fragment LONG6 : '[' '======' '[' BODY ']' '======' ']' ;
+
+// The body is non-greedy: for `[==[ ... ]==]` it must stop at the first
+// `]==]` rather than swallowing it. `]' '='*` lets a `]` that is not the
+// start of a close pass through; the lexer's non-greedy cut then prefers
+// ending the body as soon as the matching close is reachable.
+fragment BODY : ( ~[\]] | ']' '='* )*? ;
+
+// Whitespace, comments, and the shebang line ------------------------------
+
+// Lua skips a first line that starts with `#`, both `#!` and plain `# ...`.
+// Without lexer modes a rule cannot be tied to the first line, so this rule
+// matches anywhere; see the note in issue 10.
+SHEBANG : '#' ( '!' | [ \t] ) ~[\r\n]* -> skip ;
+WS      : [ \t\r\n]+ -> skip ;
+COMMENT : '--' ( LONG_COMMENT | LINE_COMMENT )? -> skip ;
+fragment LONG_COMMENT : '[' '[' BODY ']' ']'
+                      | '[' '=' '[' BODY ']' '=' ']'
+                      | '[' '==' '[' BODY ']' '==' ']'
+                      | '[' '===' '[' BODY ']' '===' ']'
+                      | '[' '====' '[' BODY ']' '====' ']'
+                      | '[' '=====' '[' BODY ']' '=====' ']'
+                      | '[' '======' '[' BODY ']' '======' ']'
+                      ;
+
+// A line comment that does not begin with a long-bracket opener. Keeping
+// openers out of this alternative is essential: otherwise a line comment,
+// which runs to the end of the line, would beat a long comment followed by
+// code on the same line (`--[[ c ]] x = 1`) on longest match.
+fragment LINE_COMMENT : ~[\[\r\n] ~[\r\n]*
+                      | '[' ~[=\[\r\n] ~[\r\n]*
+                      | '[' '='+ ~[=\[\r\n] ~[\r\n]*
+                      | '[' '='* '\r'? '\n'
+                      ;

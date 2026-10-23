@@ -30,6 +30,10 @@ let seeds = [
     "3 + (if 5 < 6 then 10 else 100) ;; let x = 14 ;;",
     "let fact = fun f (n : int) : int is if n = 0 then 1 else n * f (n-1) ;;" &
       "fact 10 ;;"]),
+  Case(grammarFile: root / "examples" / "lua" / "lua.ldb", inputs: @[
+    "local x <const> = -a ^ 2 + b * c .. d | e & f << g == h and i or j\n",
+    "function T:m(a, ...) for k, v in pairs(a) do a[k] = v end return ... end\n",
+    "local s = [==[a ]=] b]==] .. \"x\\z\\n y\" --[[ long ]] ; ::l:: goto l\n"]),
   Case(grammarFile: root / "src" / "lindeboom" / "grammar" / "ldb.ldb", inputs: @[
     readFile(root / "tests" / "grammars" / "features.ldb"),
     readFile(root / "examples" / "minipy" / "minipy.ldb")])]

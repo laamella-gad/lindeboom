@@ -1,0 +1,37 @@
+chunk
+└── block
+    └── call
+        └── fcall
+            ├── pCall
+            │   ├── pMethodCall
+            │   │   ├── pIndex
+            │   │   │   ├── pField
+            │   │   │   │   ├── pName
+            │   │   │   │   │   └── NAME "a"
+            │   │   │   │   ├── '.'
+            │   │   │   │   └── NAME "b"
+            │   │   │   ├── '['
+            │   │   │   ├── prefix
+            │   │   │   │   └── pName
+            │   │   │   │       └── NAME "c"
+            │   │   │   └── ']'
+            │   │   ├── ':'
+            │   │   ├── NAME "m"
+            │   │   └── parenArgs
+            │   │       ├── '('
+            │   │       ├── explist
+            │   │       │   └── prefix
+            │   │       │       └── pName
+            │   │       │           └── NAME "x"
+            │   │       └── ')'
+            │   └── tableArgs
+            │       └── tableconstructor
+            │           ├── '{'
+            │           ├── fieldlist
+            │           │   └── fieldList
+            │           │       └── prefix
+            │           │           └── pName
+            │           │               └── NAME "t"
+            │           └── '}'
+            └── stringArgs
+                └── STRING "\"s\""

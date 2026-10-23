@@ -74,6 +74,20 @@ proc addSet(b: var Builder, s: int32, cs: CharSet): int32 =
       b.nfa.states[cur].edges.add Edge(target: t, lo: br.lo, hi: br.hi)
       cur = t
 
+func asciiOnly(s: CharSet): bool =
+  for r in s:
+    if r.hi >= 0x80: return false
+  true
+
+proc addRawByteFallback(b: var Builder, s, t: int32) =
+  ## Let a wildcard, or a negated set that excludes only ASCII, also match
+  ## a single raw non-ASCII byte. This keeps the code-point semantics for
+  ## Unicode-aware sets while letting byte-oriented languages (Lua strings
+  ## and comments) lex input that is not valid UTF-8. Valid UTF-8 still
+  ## matches through the normal sequences; this is an extra path, not a
+  ## replacement.
+  b.nfa.states[s].edges.add Edge(target: t, lo: 0x80, hi: 0xFF)
+
 proc compileAlts(b: var Builder, bodies: seq[GExpr], s: int32): int32
 
 proc compile(b: var Builder, e: GExpr, s: int32): int32 =
@@ -113,8 +127,15 @@ proc compile(b: var Builder, e: GExpr, s: int32): int32 =
     result = s
     for r in e.text.runes:
       result = b.addSet(result, @[(int32(r), int32(r))])
-  of ekCharSet, ekRange, ekWildcard, ekNot:
+  of ekCharSet, ekRange:
     result = b.addSet(s, e.charSet)
+  of ekWildcard:
+    result = b.addSet(s, e.charSet)
+    b.addRawByteFallback(s, result)
+  of ekNot:
+    result = b.addSet(s, e.charSet)
+    if asciiOnly(e.inner.charSet):
+      b.addRawByteFallback(s, result)
   of ekTokenRef:
     var bodies: seq[GExpr]
     for a in b.g.rules[b.rules[e.name]].alts: bodies.add a.body

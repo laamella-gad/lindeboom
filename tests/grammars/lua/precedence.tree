@@ -1,0 +1,62 @@
+chunk
+└── block
+    └── assign
+        ├── varlist
+        │   └── varName
+        │       └── NAME "x"
+        ├── '='
+        └── explist
+            └── or
+                ├── left: and
+                │   ├── left: compare
+                │   │   ├── left: bor
+                │   │   │   ├── left: concat
+                │   │   │   │   ├── left: add
+                │   │   │   │   │   ├── left: unary
+                │   │   │   │   │   │   ├── op: '-'
+                │   │   │   │   │   │   └── right: power
+                │   │   │   │   │   │       ├── left: prefix
+                │   │   │   │   │   │       │   └── pName
+                │   │   │   │   │   │       │       └── NAME "a"
+                │   │   │   │   │   │       ├── '^'
+                │   │   │   │   │   │       └── right: number
+                │   │   │   │   │   │           └── NUMERAL "2"
+                │   │   │   │   │   ├── op: '+'
+                │   │   │   │   │   └── right: mul
+                │   │   │   │   │       ├── left: prefix
+                │   │   │   │   │       │   └── pName
+                │   │   │   │   │       │       └── NAME "b"
+                │   │   │   │   │       ├── op: '*'
+                │   │   │   │   │       └── right: prefix
+                │   │   │   │   │           └── pName
+                │   │   │   │   │               └── NAME "c"
+                │   │   │   │   ├── op: '..'
+                │   │   │   │   └── right: prefix
+                │   │   │   │       └── pName
+                │   │   │   │           └── NAME "d"
+                │   │   │   ├── op: '|'
+                │   │   │   └── right: band
+                │   │   │       ├── left: prefix
+                │   │   │       │   └── pName
+                │   │   │       │       └── NAME "e"
+                │   │   │       ├── op: '&'
+                │   │   │       └── right: shift
+                │   │   │           ├── left: prefix
+                │   │   │           │   └── pName
+                │   │   │           │       └── NAME "f"
+                │   │   │           ├── op: '<<'
+                │   │   │           └── right: prefix
+                │   │   │               └── pName
+                │   │   │                   └── NAME "g"
+                │   │   ├── op: '=='
+                │   │   └── right: prefix
+                │   │       └── pName
+                │   │           └── NAME "h"
+                │   ├── op: 'and'
+                │   └── right: prefix
+                │       └── pName
+                │           └── NAME "i"
+                ├── op: 'or'
+                └── right: prefix
+                    └── pName
+                        └── NAME "j"

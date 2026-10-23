@@ -1,0 +1,116 @@
+chunk
+└── block
+    ├── localFunction
+    │   ├── 'local'
+    │   ├── 'function'
+    │   ├── NAME "f"
+    │   └── funcbody
+    │       ├── '('
+    │       ├── parlist
+    │       │   ├── namelist
+    │       │   │   └── NAME "a"
+    │       │   ├── ','
+    │       │   └── '...'
+    │       ├── ')'
+    │       ├── block
+    │       │   └── retstat
+    │       │       ├── 'return'
+    │       │       └── explist
+    │       │           ├── prefix
+    │       │           │   └── pName
+    │       │           │       └── NAME "a"
+    │       │           ├── ','
+    │       │           └── vararg
+    │       │               └── '...'
+    │       └── 'end'
+    ├── function
+    │   ├── 'function'
+    │   ├── funcname
+    │   │   ├── NAME "T"
+    │   │   ├── '.'
+    │   │   └── NAME "m"
+    │   └── funcbody
+    │       ├── '('
+    │       ├── parlist
+    │       │   └── namelist
+    │       │       ├── NAME "self"
+    │       │       ├── ','
+    │       │       └── NAME "x"
+    │       ├── ')'
+    │       ├── block
+    │       │   └── retstat
+    │       │       ├── 'return'
+    │       │       └── explist
+    │       │           └── prefix
+    │       │               └── pName
+    │       │                   └── NAME "x"
+    │       └── 'end'
+    ├── local
+    │   ├── 'local'
+    │   ├── attnamelist
+    │   │   ├── NAME "c"
+    │   │   ├── attrib
+    │   │   │   ├── '<'
+    │   │   │   ├── NAME "const"
+    │   │   │   └── '>'
+    │   │   ├── ','
+    │   │   ├── NAME "d"
+    │   │   └── attrib
+    │   │       ├── '<'
+    │   │       ├── NAME "close"
+    │   │       └── '>'
+    │   ├── '='
+    │   └── explist
+    │       ├── number
+    │       │   └── NUMERAL "1"
+    │       ├── ','
+    │       └── number
+    │           └── NUMERAL "2"
+    ├── forNum
+    │   ├── 'for'
+    │   ├── NAME "i"
+    │   ├── '='
+    │   ├── number
+    │   │   └── NUMERAL "1"
+    │   ├── ','
+    │   ├── number
+    │   │   └── NUMERAL "10"
+    │   ├── ','
+    │   ├── number
+    │   │   └── NUMERAL "2"
+    │   ├── 'do'
+    │   ├── block
+    │   │   └── break
+    │   │       └── 'break'
+    │   └── 'end'
+    ├── forIn
+    │   ├── 'for'
+    │   ├── namelist
+    │   │   ├── NAME "k"
+    │   │   ├── ','
+    │   │   └── NAME "v"
+    │   ├── 'in'
+    │   ├── explist
+    │   │   └── prefix
+    │   │       └── pCall
+    │   │           ├── pName
+    │   │           │   └── NAME "pairs"
+    │   │           └── parenArgs
+    │   │               ├── '('
+    │   │               ├── explist
+    │   │               │   └── table
+    │   │               │       └── tableconstructor
+    │   │               │           ├── '{'
+    │   │               │           └── '}'
+    │   │               └── ')'
+    │   ├── 'do'
+    │   ├── block
+    │   │   └── empty
+    │   │       └── ';'
+    │   └── 'end'
+    └── repeat
+        ├── 'repeat'
+        ├── block
+        ├── 'until'
+        └── true
+            └── 'true'

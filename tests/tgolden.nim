@@ -47,6 +47,9 @@ block golden_calc_var:
 block golden_miniml:
   checkGolden(root / "examples" / "miniml" / "miniml.ldb")
 
+block golden_lua:
+  checkGolden(root / "examples" / "lua" / "lua.ldb")
+
 block golden_front_end:
   # the front end parses its own grammar and generates itself
   checkGolden(root / "src" / "lindeboom" / "grammar" / "ldb.ldb")
