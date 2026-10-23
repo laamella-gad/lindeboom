@@ -491,6 +491,3 @@ source ─▶ lexer ─▶ indentation filter ─▶ parser ─▶ parse tree
   as a message; the grammar has no say in the wording, the program does.
 - **Interpreter:** `lindeboom parse` runs the analysed grammar directly,
   and the tests check that it agrees with the generated parsers.
-
-Not planned: embedded actions and predicates, lexer modes, grammar imports,
-and targets other than Nim.
