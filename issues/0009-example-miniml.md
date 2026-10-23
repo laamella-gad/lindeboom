@@ -1,7 +1,7 @@
 ---
 id: 9
 title: "Example: MiniML"
-status: open
+status: done
 labels: [example]
 depends: [4, 5, 6]
 ---
@@ -19,21 +19,21 @@ let fact =
 fact 10 ;;
 ```
 
-- [ ] `miniml.ldb`, ported from `lexer.mll` and `parser.mly`
-  - [ ] Keywords: `int bool true false fun is if then else let`
-  - [ ] File: `;;`-separated expressions and `let` definitions
-  - [ ] Operators: `+ -` left, `*` left and tighter; `= <` non-associative
-  - [ ] `if ... then ... else e` and `fun ... is e` extend as far right
+- [x] `miniml.ldb`, ported from `lexer.mll` and `parser.mly`
+  - [x] Keywords: `int bool true false fun is if then else let`
+  - [x] File: `;;`-separated expressions and `let` definitions
+  - [x] Operators: `+ -` left, `*` left and tighter; `= <` non-associative
+  - [x] `if ... then ... else e` and `fun ... is e` extend as far right
         as possible
-  - [ ] Application by juxtaposition, left-associative, tighter than
+  - [x] Application by juxtaposition, left-associative, tighter than
         all operators: `f (n-1)`
-  - [ ] `- INT` as a negative literal (no general unary minus)
-  - [ ] Types: `int`, `bool`, `t -> t` right-associative, parentheses
-- [ ] Type checker
-- [ ] Evaluator
+  - [x] `- INT` as a negative literal (no general unary minus)
+  - [x] Types: `int`, `bool`, `t -> t` right-associative, parentheses
+- [x] Type checker
+- [x] Evaluator
 - [ ] Optional: compiler to plzoo's abstract machine (`compile.ml`,
       `machine.ml`)
-- [ ] REPL plus loading files; test with plzoo's `example.miniml`
+- [x] REPL plus loading files; test with plzoo's `example.miniml`
 
 Design gaps to resolve:
 
